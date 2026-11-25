@@ -540,10 +540,10 @@ internal fun TabletPlayerActionRow(
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
             OutputActions(onOpenOutput, onListenTogether, onOpenMembers, videoToggle)
-            Spacer(Modifier.width(8.dp))
+            Spacer(Modifier.width(4.dp))
             Box(Modifier.weight(1f)) {
                 Box(Modifier.widthIn(max = 200.dp).fillMaxWidth()) {
-                    OutputCaption(accountName, onOpenOutput, onOpenMembers, Modifier.fillMaxWidth())
+                    OutputCaption(accountName, onOpenOutput, onOpenMembers, Modifier.fillMaxWidth(), TextAlign.Start)
                 }
             }
         }
@@ -551,9 +551,11 @@ internal fun TabletPlayerActionRow(
         BottomGlyph(icon = LayaIcons.Infinity,
             contentDescription = stringResource(if (autoplayEnabled) Res.string.autoplay_on else Res.string.autoplay_off),
             onClick = onToggleAutoplay, highlighted = autoplayEnabled, tapWindowMs = AUTOPLAY_TAP_WINDOW_MS)
+        Spacer(Modifier.width(12.dp))
         BottomGlyph(icon = LayaIcons.LyricsQuote,
             contentDescription = stringResource(if (lyricsOpen) Res.string.close_lyrics else Res.string.open_lyrics),
             onClick = onToggleLyrics, highlighted = lyricsOpen)
+        Spacer(Modifier.width(12.dp))
         BottomGlyph(icon = LayaIcons.Queue, contentDescription = stringResource(Res.string.up_next),
             onClick = onToggleQueue, highlighted = queueOpen)
     }
@@ -1149,6 +1151,7 @@ internal fun OutputCaption(
     /** Who's in it, before the settings page — see [ListenTogetherMembersSheet]. */
     onOpenMembers: () -> Unit,
     modifier: Modifier = Modifier.fillMaxWidth(0.65f),
+    textAlign: TextAlign = TextAlign.Center,
 ) {
     val badge = rememberPartyBadge()
     val outputName = rememberAudioOutputName(accountName)
@@ -1186,7 +1189,7 @@ internal fun OutputCaption(
     val captionStyle = MaterialTheme.typography.labelSmall.copy(
         fontSize = if (prominent) 13.sp else 11.sp,
         fontWeight = if (prominent) FontWeight.SemiBold else MaterialTheme.typography.labelSmall.fontWeight,
-        textAlign = TextAlign.Center,
+        textAlign = textAlign,
     )
     if (!badge.inParty && isHiResOutput) {
         ShimmerText(
@@ -1201,7 +1204,7 @@ internal fun OutputCaption(
             color = LocalPlayerTint.current.copy(alpha = if (prominent) 0.65f else 0.55f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+            textAlign = textAlign,
             modifier = captionModifier,
         )
     }

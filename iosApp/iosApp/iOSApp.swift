@@ -54,6 +54,7 @@ struct ComposeView: UIViewControllerRepresentable {
 
 /// Owns the status bar style for the Compose screen: light icons over dark content, dark over light.
 final class StatusBarHost: UIViewController {
+    private weak var content: UIViewController?
     var light = true { didSet { setNeedsStatusBarAppearanceUpdate() } }
     override var preferredStatusBarStyle: UIStatusBarStyle { light ? .lightContent : .darkContent }
 
@@ -65,5 +66,24 @@ final class StatusBarHost: UIViewController {
         child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
         view.addSubview(child.view)
         child.didMove(toParent: self)
+        content = child
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        guard let content else { return }
+        // Keep the Compose viewport clear of Duo's system status column.
+        // Use the current window's native safe rectangle on expanded phones;
+        // keep the existing edge-to-edge canvas on iPad and compact phones.
+        let safeFrame = view.window.map { view.convert($0.safeAreaLayoutGuide.layoutFrame, from: $0) }
+            ?? view.safeAreaLayoutGuide.layoutFrame
+        let frame = AdaptiveContentBounds.frame(in: view.bounds, safeFrame: safeFrame,
+            isPhone: traitCollection.userInterfaceIdiom == .phone)
+        if content.view.frame != frame { content.view.frame = frame }
+    }
+
+    override func viewSafeAreaInsetsDidChange() {
+        super.viewSafeAreaInsetsDidChange()
+        view.setNeedsLayout()
     }
 }

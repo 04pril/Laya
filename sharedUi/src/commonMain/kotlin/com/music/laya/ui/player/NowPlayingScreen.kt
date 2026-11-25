@@ -1552,7 +1552,7 @@ fun NowPlayingScreen(
     // Lyrics, output and queue, with the output name under them — the row both
     // layouts end on, and the only thing in the landscape player's left column
     // besides the sleeve.
-    val tabletPlayer = tabletPlayerLayoutAvailable(PlayerPlatform.host.prefersTabletPlayerLayout, windowWidth, windowHeight)
+    val tabletPlayer = tabletPlayerLayoutAvailable(PlayerPlatform.host.supportsExpandedPlayerLayout, windowWidth, windowHeight)
     val playerActions: @Composable () -> Unit = {
         if (tabletPlayer) {
             TabletPlayerActionRow(lyricsOpen, queueOpen, autoplayEnabled, accountName,
@@ -2107,6 +2107,7 @@ fun NowPlayingScreen(
                     },
                     lyricsPane = {
                         LandscapeLyricsPane(
+                            controlsAtTopEnd = tabletPlayer,
                             hasLyrics = lyricsTranslation.displayedLyrics.isNotEmpty(),
                             placeholder = if (lyricsUnavailable) {
                                 stringResource(Res.string.lyrics_not_available)

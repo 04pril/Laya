@@ -511,74 +511,57 @@ internal fun LandscapeLyricsPane(
     placeholder: String,
     status: String,
     onStatusClick: () -> Unit,
-    /** Whether lines are being picked, which is what the bar stands in for. */
     picking: Boolean = false,
-    /** The pick bar itself, drawn in place of the row below. */
     pickBar: @Composable () -> Unit = {},
     romanizationToggle: @Composable () -> Unit,
     translationToggle: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    controlsAtTopEnd: Boolean = false,
+    karaokeToggle: @Composable () -> Unit = { KaraokeToggleButton(enabled = true) },
     panel: @Composable (Modifier) -> Unit,
 ) {
-    Column(modifier = modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxWidth(),
-        ) {
-            if (hasLyrics) {
-                panel(Modifier.fillMaxSize())
-            } else {
-                // Held at a fixed line rather than through
-                // [LyricsUnavailableLine] or [LyricsLoadingLine]: those fade
-                // out after a few seconds, which here would leave the whole
-                // column blank for as long as the track keeps playing.
-                Text(
-                    text = placeholder,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color.White.copy(alpha = 0.6f),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.align(Alignment.Center),
-                )
-            }
-        }
-        // While a pick is open the row below gives way to the bar: the two
-        // toggles in it would redraw the very lines the pick is indexing, and
-        // the status line is the one thing the bar's own Cancel and Share sit
-        // where.
-        if (picking) {
-            Box(Modifier.fillMaxWidth()) { pickBar() }
-        } else {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Fixed slots either side whether or not the toggles are drawn, so
-            // the status line stays centred as lyrics arrive.
-            Box(Modifier.width(SIDE_SLOT_WIDTH).height(34.dp)) { if (hasLyrics) romanizationToggle() }
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                LyricsStatusWithChange(
-                    status = status,
-                    onStatusClick = onStatusClick,
-                )
-            }
-            Row(
-                modifier = Modifier.width(SIDE_SLOT_WIDTH),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
-            ) {
+    Box(modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize()) {
+            Box(Modifier.weight(1f).fillMaxWidth()) {
                 if (hasLyrics) {
-                    translationToggle()
-                    KaraokeToggleButton(enabled = true)
+                    // Keep scrolling words clear of the tablet's floating toolbar.
+                    panel(Modifier.fillMaxSize().then(if (controlsAtTopEnd) Modifier.padding(end = 48.dp) else Modifier))
+                } else {
+                    Text(
+                        text = placeholder,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = Color.White.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.align(Alignment.Center),
+                    )
+                }
+            }
+            if (picking) {
+                Box(Modifier.fillMaxWidth()) { pickBar() }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.width(SIDE_SLOT_WIDTH).height(34.dp)) { if (hasLyrics) romanizationToggle() }
+                    Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        LyricsStatusWithChange(status = status, onStatusClick = onStatusClick)
+                    }
+                    Row(Modifier.width(SIDE_SLOT_WIDTH), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+                        if (hasLyrics && !controlsAtTopEnd) {
+                            translationToggle()
+                            karaokeToggle()
+                        }
+                    }
                 }
             }
         }
+        if (controlsAtTopEnd && hasLyrics && !picking) {
+            Column(
+                Modifier.align(Alignment.TopEnd).padding(top = 8.dp),
+                horizontalAlignment = Alignment.End,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                karaokeToggle()
+                translationToggle()
+            }
         }
     }
 }

@@ -24,7 +24,7 @@ import kotlin.test.*
 
 @OptIn(ExperimentalComposeUiApi::class)
 class TabletPlayerLayoutTest {
-    @Test fun layoutTracksWindowSizeWithoutUsingTabletLayoutOnPhonesOrNarrowWindows() {
+    @Test fun layoutTracksWindowSizeOnSupportedHostsAndAvoidsCompactWindows() {
         assertFalse(tabletPlayerLayoutAvailable(false, 1366.dp, 1024.dp))
         assertFalse(tabletPlayerLayoutAvailable(true, 600.dp, 1194.dp))
         assertTrue(tabletPlayerLayoutAvailable(true, 834.dp, 1194.dp))
@@ -59,11 +59,15 @@ class TabletPlayerLayoutTest {
         val host = Proxy.newProxyInstance(PlayerHost::class.java.classLoader, arrayOf(PlayerHost::class.java)) { _, method, _ ->
             when (method.name) {
                 "getSettings" -> settings
+                "getParty" -> MutableStateFlow(PartyUi())
+                "getOutputFormat" -> MutableStateFlow(OutputFormatUi())
+                "getHasNativeOutputGlyph", "getProminentOutputCaption" -> true
+                "rememberAudioOutputs" -> listOf(AudioOutputDevice(1, "AirPods Pro", AudioOutputKind.BLUETOOTH, true))
                 else -> null
             }
         } as PlayerHost
         PlayerPlatform.install(host)
-        for ((width, height) in listOf(1280 to 960, 1024 to 1366, 1024 to 768, 834 to 1194, 768 to 1024)) {
+        for ((width, height) in listOf(1280 to 960, 1024 to 1366, 1024 to 768, 834 to 1194, 768 to 1024, 891 to 665, 1301 to 970)) {
             for (pane in PlayerPane.entries) {
                 val bounds = mutableMapOf<String, Rect>()
                 val scene = ImageComposeScene(width, height, Density(1f)) {
@@ -73,9 +77,9 @@ class TabletPlayerLayoutTest {
                             background = { Box(it.background(Brush.verticalGradient(listOf(Color(0xff455059), Color(0xff11151a))))) },
                             artwork = { m -> Box(m.onGloballyPositioned { bounds["art"] = it.boundsInRoot() }
                                 .background(Brush.linearGradient(listOf(Color(0xff87929c), Color(0xff222e3b))))) },
-                            actions = { Row(Modifier.fillMaxWidth().height(48.dp).onGloballyPositioned { bounds["actions"] = it.boundsInRoot() }, horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Output · AirPods Pro", color = Color.White)
-                                Text("Autoplay     Lyrics     Queue", color = Color.White)
+                            actions = { Box(Modifier.onGloballyPositioned { bounds["actions"] = it.boundsInRoot() }) {
+                                TabletPlayerActionRow(pane == PlayerPane.Lyrics, pane == PlayerPane.Queue, true, null,
+                                    {}, {}, {}, {}, {}, {})
                             } },
                             mainPane = { compact ->
                                 Box(Modifier.onGloballyPositioned { bounds["controls"] = it.boundsInRoot() }) {
@@ -99,9 +103,18 @@ class TabletPlayerLayoutTest {
                                     )
                                 }
                             },
-                            lyricsPane = { Column(Modifier.fillMaxSize().onGloballyPositioned { bounds["panel"] = it.boundsInRoot() }, verticalArrangement = Arrangement.Center) {
-                                for ((i, text) in listOf("Don't cry, Snowman", "Who will catch your tears", "If you can't catch me, darling?").withIndex()) {
-                                    Text(text, color = Color.White.copy(alpha = if (i == 1) 1f else 0.35f), fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 22.dp))
+                            lyricsPane = { Box(Modifier.fillMaxSize().onGloballyPositioned { bounds["panel"] = it.boundsInRoot() }) {
+                                LandscapeLyricsPane(true, "", "Lyrics: preview", {},
+                                    romanizationToggle = { Text("◎", color = Color.White) },
+                                    translationToggle = { Text("文A", color = Color.White, modifier = Modifier.size(34.dp).onGloballyPositioned { bounds["translation"] = it.boundsInRoot() }) },
+                                    controlsAtTopEnd = true,
+                                    karaokeToggle = { Text("♬", color = Color.White, modifier = Modifier.size(34.dp).onGloballyPositioned { bounds["karaoke"] = it.boundsInRoot() }) },
+                                ) { modifier ->
+                                    Column(modifier.onGloballyPositioned { bounds["words"] = it.boundsInRoot() }, verticalArrangement = Arrangement.Center) {
+                                        for ((i, text) in listOf("Don't cry, Snowman", "Who will catch your tears", "If you can't catch me, darling?").withIndex()) {
+                                            Text(text, color = Color.White.copy(alpha = if (i == 1) 1f else 0.35f), fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 22.dp))
+                                        }
+                                    }
                                 }
                             } },
                             queuePane = { Column(Modifier.fillMaxSize().onGloballyPositioned { bounds["panel"] = it.boundsInRoot() }) {
@@ -130,6 +143,14 @@ class TabletPlayerLayoutTest {
                         assertTrue(art.center.x < width / 2f)
                         assertTrue(bounds.getValue("panel").left >= art.right)
                         if (pane == PlayerPane.Queue) assertNotNull(bounds["strip"])
+                        if (pane == PlayerPane.Lyrics) {
+                            val karaoke = bounds.getValue("karaoke"); val translation = bounds.getValue("translation")
+                            val panel = bounds.getValue("panel")
+                            assertTrue(karaoke.bottom < translation.top)
+                            assertEquals(karaoke.right, translation.right)
+                            assertTrue(translation.bottom < panel.center.y)
+                            assertTrue(bounds.getValue("words").right < translation.left)
+                        }
                     }
                     val dir = File("build/tablet-player-proof").apply { mkdirs() }
                     val image = scene.render(2_000_000_000L)

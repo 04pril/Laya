@@ -72,8 +72,8 @@ internal object IosPlayerHost : PlayerHost {
     override val prominentOutputCaption = true
     override val portraitArtworkTopReserve = 26.dp
     override val outputCaptionAlignment = Alignment.Center
-    override val prefersTabletPlayerLayout: Boolean
-        get() = platform.UIKit.UIDevice.currentDevice.userInterfaceIdiom == platform.UIKit.UIUserInterfaceIdiomPad
+    // Use available window space, including an unfolded phone, rather than the device name.
+    override val supportsExpandedPlayerLayout = true
     override val hasNativeOutputGlyph = true
 
     @Composable

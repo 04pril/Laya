@@ -103,7 +103,7 @@ private fun TabletSidePanel(
     modifier: Modifier,
 ) {
     AnimatedVisibility(visible = visible, enter = fadeIn(tween(240, 80)), exit = fadeOut(tween(160)), modifier = modifier) {
-        Box(Modifier.fillMaxSize().padding(horizontal = PLAYER_GUTTER)) {
+        Box(Modifier.fillMaxSize().padding(start = PLAYER_GUTTER, end = if (pane == PlayerPane.Lyrics) 0.dp else PLAYER_GUTTER)) {
             when (pane) {
                 PlayerPane.Lyrics -> lyrics()
                 PlayerPane.Queue -> queue()
