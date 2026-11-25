@@ -16,7 +16,8 @@ internal fun customizedLyricText(text: String, baseSize: Float): AnnotatedString
     val size by P.fontSize.collectAsState(); val weight by P.fontWeight.collectAsState()
     val ks by P.koreanSize.collectAsState(); val kw by P.koreanWeight.collectAsState()
     val ls by P.latinSize.collectAsState(); val lw by P.latinWeight.collectAsState()
-    return remember(text, baseSize, separate, size, weight, ks, kw, ls, lw) {
+    val customSizes by P.customFontSizeKeys.collectAsState()
+    return remember(text, baseSize, separate, size, weight, ks, kw, ls, lw, customSizes) {
         val builder = AnnotatedString.Builder(text)
         fun korean(c: Char) = c in '\uAC00'..'\uD7AF' || c in '\u1100'..'\u11FF' || c in '\u3130'..'\u318F'
         var start = 0
@@ -25,7 +26,8 @@ internal fun customizedLyricText(text: String, baseSize: Float): AnnotatedString
             while (end < text.length && korean(text[end]) == ko) end++
             val s = if (!separate) size else if (ko) ks else ls
             val w = if (!separate) weight else if (ko) kw else lw
-            builder.addStyle(SpanStyle(fontSize = (baseSize * s / 34f).sp, fontWeight = FontWeight(w)), start, end)
+            val key = if (!separate) "font_size" else if (ko) "korean_size" else "latin_size"
+            builder.addStyle(SpanStyle(fontSize = (baseSize * lyricFontScale(baseSize, s, key in customSizes)).sp, fontWeight = FontWeight(w)), start, end)
             start = end
         }
         builder.toAnnotatedString()
@@ -39,7 +41,12 @@ internal fun customizedLyricStyle(style: androidx.compose.ui.text.TextStyle): an
     val all by P.fontSize.collectAsState()
     val korean by P.koreanSize.collectAsState()
     val latin by P.latinSize.collectAsState()
-    val scale = (if (separate) maxOf(korean, latin) else all) / 34f
+    val customSizes by P.customFontSizeKeys.collectAsState()
+    val base = style.fontSize.value
+    val scale = if (separate) maxOf(
+        lyricFontScale(base, korean, "korean_size" in customSizes),
+        lyricFontScale(base, latin, "latin_size" in customSizes),
+    ) else lyricFontScale(base, all, "font_size" in customSizes)
     return scaledLyricLineHeight(style, scale)
 }
 
@@ -50,3 +57,7 @@ internal fun scaledLyricLineHeight(style: androidx.compose.ui.text.TextStyle, sc
     if (!height.value.isFinite()) return style
     return style.copy(lineHeight = height)
 }
+
+/** Device defaults enlarge full lyrics; the one-line strip retains its original size unless customized. */
+internal fun lyricFontScale(baseSize: Float, configuredSize: Int, customized: Boolean): Float =
+    if (baseSize < 24f && !customized) 1f else configuredSize / 34f

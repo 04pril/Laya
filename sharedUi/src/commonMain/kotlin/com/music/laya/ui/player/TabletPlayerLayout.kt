@@ -27,7 +27,7 @@ internal fun tabletPlayerMetrics(width: Dp, panelOpen: Boolean): TabletPlayerMet
     val gutter = minOf(60.dp, width * 0.05f)
     val gap = gutter
     val inner = (width - gutter * 2).coerceAtLeast(0.dp)
-    val panelPlayer = minOf(580.dp, width * 0.42f, (inner - gap).coerceAtLeast(0.dp) / 2)
+    val panelPlayer = minOf(620.dp, width * 0.46f, (inner - gap).coerceAtLeast(0.dp) * 0.55f)
     val player = if (!panelOpen && width < 900.dp) minOf(580.dp, inner) else panelPlayer
     val left = if (panelOpen) gutter else (width - player) / 2
     return TabletPlayerMetrics(gutter, gap, player, left, gutter + panelPlayer + gap, (inner - panelPlayer - gap).coerceAtLeast(0.dp))
@@ -37,9 +37,11 @@ internal data class TabletPlayerStack(val artwork: Dp, val top: Dp)
 
 internal fun tabletPlayerStack(height: Dp, width: Dp, controls: Dp): TabletPlayerStack {
     val gap = 24.dp
-    val room = (height - controls - gap).coerceAtLeast(0.dp)
+    // Anchor the deck above the footer instead of leaving all spare height below it.
+    val bottom = minOf(64.dp, height * 0.08f)
+    val room = (height - controls - gap - bottom).coerceAtLeast(0.dp)
     val artwork = minOf(width, room)
-    val top = minOf(height * 0.08f, (height - artwork - controls - gap).coerceAtLeast(0.dp))
+    val top = (height - artwork - controls - gap - bottom).coerceAtLeast(0.dp)
     return TabletPlayerStack(artwork, top)
 }
 
@@ -66,8 +68,9 @@ internal fun TabletPlayerLayout(
             val compact = maxHeight < 760.dp
             Column(Modifier.fillMaxSize().padding(top = 40.dp, bottom = 8.dp)) {
                 BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
-                    // Measure controls first so the artwork only uses the room left over.
-                    // No estimated heights or second-frame feedback when lyrics appear.
+                    // Remember natural control height so a height-limited sleeve and its
+                    // controls use the same width on the following measure pass.
+                    var controlsHeight by remember { mutableIntStateOf(0) }
                     Layout(
                         content = {
                             Box { artwork(Modifier.fillMaxSize()) }
@@ -75,14 +78,19 @@ internal fun TabletPlayerLayout(
                         },
                         modifier = Modifier.offset(x = left).width(playerWidth).fillMaxHeight(),
                     ) { children, constraints ->
-                        val controls = children[1].measure(Constraints.fixedWidth(constraints.maxWidth))
+                        val controlWidth = if (controlsHeight > 0) {
+                            tabletPlayerStack(constraints.maxHeight.toDp(), constraints.maxWidth.toDp(), controlsHeight.toDp())
+                                .artwork.roundToPx().coerceAtLeast(280.dp.roundToPx()).coerceAtMost(constraints.maxWidth)
+                        } else constraints.maxWidth
+                        val controls = children[1].measure(Constraints.fixedWidth(controlWidth))
+                        if (controlsHeight != controls.height) controlsHeight = controls.height
                         val stack = tabletPlayerStack(constraints.maxHeight.toDp(), constraints.maxWidth.toDp(), controls.height.toDp())
                         val side = stack.artwork.roundToPx()
                         val art = children[0].measure(Constraints.fixed(side, side))
                         layout(constraints.maxWidth, constraints.maxHeight) {
                             val top = stack.top.roundToPx()
                             art.placeRelative((constraints.maxWidth - side) / 2, top)
-                            controls.placeRelative(0, top + side + 24.dp.roundToPx())
+                            controls.placeRelative((constraints.maxWidth - controls.width) / 2, top + side + 24.dp.roundToPx())
                         }
                     }
                     TabletSidePanel(panelOpen, pane, lyricsPane, queuePane,

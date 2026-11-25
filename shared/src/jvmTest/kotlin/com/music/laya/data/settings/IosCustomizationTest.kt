@@ -50,4 +50,22 @@ class IosCustomizationTest {
         assertTrue(IosCustomization.showLyricsProvider.value)
     }
 
+    @Test fun tabletDefaultsOnlyApplyToSizesThatTheUserHasNotSaved() {
+        val store = MapSettings()
+        IosCustomization.install(store, "ko", defaultFontSize = 48)
+        assertEquals(48, IosCustomization.fontSize.value)
+        assertEquals(48, IosCustomization.koreanSize.value)
+        assertTrue(IosCustomization.customFontSizeKeys.value.isEmpty())
+        IosCustomization.set("font_size", IosCustomization.fontSize, 34)
+        IosCustomization.set("korean_size", IosCustomization.koreanSize, 28)
+        IosCustomization.install(store, "ko", defaultFontSize = 48)
+        assertEquals(34, IosCustomization.fontSize.value)
+        assertEquals(28, IosCustomization.koreanSize.value)
+        assertEquals(48, IosCustomization.latinSize.value)
+        assertEquals(setOf("font_size", "korean_size"), IosCustomization.customFontSizeKeys.value)
+        IosCustomization.install(MapSettings(), "en")
+        assertEquals(34, IosCustomization.fontSize.value)
+        assertTrue(IosCustomization.customFontSizeKeys.value.isEmpty())
+    }
+
 }

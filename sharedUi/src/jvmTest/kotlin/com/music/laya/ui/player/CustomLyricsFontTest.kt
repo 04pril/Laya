@@ -8,6 +8,13 @@ import androidx.compose.ui.unit.sp
 import kotlin.test.*
 
 class CustomLyricsFontTest {
+    @Test fun tabletDefaultEnlargesFullLyricsButPreservesStripAndSavedSizes() {
+        assertEquals(48f / 34f, lyricFontScale(34f, 48, false))
+        assertEquals(1f, lyricFontScale(16f, 48, false))
+        assertEquals(28f / 34f, lyricFontScale(34f, 28, true))
+        assertEquals(28f / 34f, lyricFontScale(16f, 28, true))
+    }
+
     @Test fun automaticLineHeightRemainsAutomaticAtEverySupportedFontSize() {
         // The one-line lyric strip supplies no lineHeight. Its first timed lyric crashed build 38.
         val strip = TextStyle(fontSize = 16.sp, fontWeight = FontWeight.Bold)

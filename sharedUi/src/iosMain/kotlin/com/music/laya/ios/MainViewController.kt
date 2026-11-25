@@ -76,7 +76,8 @@ fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: 
         },
     )
     com.music.laya.data.settings.IosCustomization.install(NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults),
-        if (com.music.laya.platform.systemLanguageTag().startsWith("ko")) "ko" else "en")
+        if (com.music.laya.platform.systemLanguageTag().startsWith("ko")) "ko" else "en",
+        defaultFontSize = if (platform.UIKit.UIDevice.currentDevice.userInterfaceIdiom == platform.UIKit.UIUserInterfaceIdiomPad) 48 else 34)
     IosNative.host?.applyLanguage(com.music.laya.data.settings.IosCustomization.language.value)
     IosNative.host?.setCarScreenOn(com.music.laya.data.settings.IosCustomization.keepCarScreenOn.value)
     // Falls back to the built-in signature server when a saved one is down.

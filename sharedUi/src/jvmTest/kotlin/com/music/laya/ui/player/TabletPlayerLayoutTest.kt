@@ -112,7 +112,7 @@ class TabletPlayerLayoutTest {
                                 ) { modifier ->
                                     Column(modifier.onGloballyPositioned { bounds["words"] = it.boundsInRoot() }, verticalArrangement = Arrangement.Center) {
                                         for ((i, text) in listOf("Don't cry, Snowman", "Who will catch your tears", "If you can't catch me, darling?").withIndex()) {
-                                            Text(text, color = Color.White.copy(alpha = if (i == 1) 1f else 0.35f), fontSize = 34.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 22.dp))
+                                            Text(text, color = Color.White.copy(alpha = if (i == 1) 1f else 0.35f), fontSize = 48.sp, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 22.dp))
                                         }
                                     }
                                 }
@@ -128,9 +128,14 @@ class TabletPlayerLayoutTest {
                     repeat(12) { scene.render((it + 1) * 100_000_000L).close() }
                     val art = bounds.getValue("art"); val controls = bounds.getValue("controls"); val actions = bounds.getValue("actions")
                     assertTrue(art.bottom <= controls.top, "Artwork must precede credits/transport: $bounds")
+                    assertTrue(actions.top - controls.bottom <= 65f, "The deck must not leave a large empty area above the footer: $bounds")
                     assertTrue(controls.bottom <= actions.top, "Controls must stay above the footer: $bounds")
-                    assertTrue(art.width >= 280 && art.height == art.width)
-                    assertTrue(controls.width >= 300 && controls.height >= 180)
+                    assertTrue(art.width >= 240 && art.height == art.width)
+                    if (art.width >= 280) {
+                        assertEquals(art.left, controls.left, 1f)
+                        assertEquals(art.right, controls.right, 1f)
+                    }
+                    assertTrue(controls.width >= 280 && controls.height >= 180)
                     assertTrue(bounds.getValue("volume").bottom <= actions.top, "The volume row must remain visible above the footer: $bounds")
                     bounds["strip"]?.let { strip ->
                         assertTrue(bounds.getValue("scrubber").top - strip.bottom >= 12f, "One-line lyrics need breathing room above the scrubber: $bounds")
