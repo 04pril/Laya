@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.ui.platform.LocalFocusManager
@@ -1398,9 +1399,12 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         onDismissPlayer = {
                             if (player.song?.queueEntryId == song?.queueEntryId) { player.stopAndDismiss(); nowPlayingOpen = false }
                         },
-                        modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
-                            barHeight = with(density) { it.height.toDp() }
-                        },
+                        // Same 640pt envelope as BitChord's floating mini player; cap the
+                        // whole shared bar so expanded and inline states stay centred together.
+                        modifier = Modifier.align(Alignment.BottomCenter)
+                            .widthIn(max = 640.dp).fillMaxWidth().onSizeChanged {
+                                barHeight = with(density) { it.height.toDp() }
+                            },
                     )
 
                     AnimatedVisibility(
