@@ -6,7 +6,7 @@ import Foundation
 final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     static let scheme = "bitchord-stream"
 
-    let queue = DispatchQueue(label: "bitchord.resource-loader")
+    let queue = DispatchQueue(label: "laya.resource-loader")
     let proxyURL: URL
     var onHTTPError: ((Int) -> Void)?
     private(set) var reportedHTTPError = false
@@ -193,7 +193,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                         self.onHTTPError?(status)
                     }
                     loadingRequest.finishLoading(with: NSError(
-                        domain: "BitChord", code: status,
+                        domain: "Laya", code: status,
                         userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]
                     ))
                     self.tasks.removeValue(forKey: key)
@@ -294,7 +294,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             reportedHTTPError = true
             onHTTPError?(status)
         }
-        finish(s, error: NSError(domain: "BitChord", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]))
+        finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]))
     }
 
     private func releaseStreaming() {

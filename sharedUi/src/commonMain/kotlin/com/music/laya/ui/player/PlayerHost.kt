@@ -130,6 +130,8 @@ interface PlayerHost {
     val outputCaptionGap: Dp get() = 18.dp
     val outputCaptionAlignment: Alignment get() = Alignment.TopCenter
 
+    val prefersTabletPlayerLayout: Boolean get() = false
+
     val hasNativeOutputGlyph: Boolean get() = false
 
     @Composable

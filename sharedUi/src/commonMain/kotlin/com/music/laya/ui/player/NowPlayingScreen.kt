@@ -1552,34 +1552,41 @@ fun NowPlayingScreen(
     // Lyrics, output and queue, with the output name under them — the row both
     // layouts end on, and the only thing in the landscape player's left column
     // besides the sleeve.
+    val tabletPlayer = tabletPlayerLayoutAvailable(PlayerPlatform.host.prefersTabletPlayerLayout, windowWidth, windowHeight)
     val playerActions: @Composable () -> Unit = {
-        PlayerActionRow(
-            lyricsOpen = lyricsOpen,
-            queueOpen = queueOpen,
-            shuffleEnabled = shuffleEnabled,
-            repeatMode = repeatMode,
-            autoplayEnabled = autoplayEnabled,
-            onToggleLyrics = toggleLyrics,
-            onToggleQueue = toggleQueue,
-            onToggleShuffle = onToggleShuffle,
-            onCycleRepeat = onCycleRepeat,
-            onToggleAutoplay = onToggleAutoplay,
-            onOpenOutput = openAudioOutput,
-            onListenTogether = onListenTogether,
-            onOpenListenTogetherMembers = openListenTogetherMembers,
-            videoToggle = videoToggle,
-        )
-        // Keep the current output caption visible in every state.
-        Spacer(Modifier.height(PlayerPlatform.host.outputCaptionGap))
-        Box(
-            modifier = Modifier.fillMaxWidth().height(20.dp),
-            contentAlignment = PlayerPlatform.host.outputCaptionAlignment,
-        ) {
-            OutputCaption(
-                accountName = accountName,
+        if (tabletPlayer) {
+            TabletPlayerActionRow(lyricsOpen, queueOpen, autoplayEnabled, accountName,
+                toggleLyrics, toggleQueue, onToggleAutoplay, openAudioOutput, onListenTogether,
+                openListenTogetherMembers, videoToggle)
+        } else {
+            PlayerActionRow(
+                lyricsOpen = lyricsOpen,
+                queueOpen = queueOpen,
+                shuffleEnabled = shuffleEnabled,
+                repeatMode = repeatMode,
+                autoplayEnabled = autoplayEnabled,
+                onToggleLyrics = toggleLyrics,
+                onToggleQueue = toggleQueue,
+                onToggleShuffle = onToggleShuffle,
+                onCycleRepeat = onCycleRepeat,
+                onToggleAutoplay = onToggleAutoplay,
                 onOpenOutput = openAudioOutput,
-                onOpenMembers = openListenTogetherMembers,
+                onListenTogether = onListenTogether,
+                onOpenListenTogetherMembers = openListenTogetherMembers,
+                videoToggle = videoToggle,
             )
+            // Keep the current output caption visible in every state.
+            Spacer(Modifier.height(PlayerPlatform.host.outputCaptionGap))
+            Box(
+                modifier = Modifier.fillMaxWidth().height(20.dp),
+                contentAlignment = PlayerPlatform.host.outputCaptionAlignment,
+            ) {
+                OutputCaption(
+                    accountName = accountName,
+                    onOpenOutput = openAudioOutput,
+                    onOpenMembers = openListenTogetherMembers,
+                )
+            }
         }
     }
 
@@ -1857,7 +1864,7 @@ fun NowPlayingScreen(
                 )
                 playerOverlays()
             }
-        } else if (landscape) {
+        } else if (landscape || tabletPlayer) {
             // Paused always wins outright over a scrub in progress — see
             // [ARTWORK_PAUSE_SHRINK_SCALE].
             val landscapeArtScale by animateFloatAsState(
@@ -1920,6 +1927,7 @@ fun NowPlayingScreen(
 
             Box(modifier = modifier.fillMaxSize().then(dockHost)) {
                 LandscapePlayerLayout(
+                    tablet = tabletPlayer,
                     pane = when {
                         lyricsOpen -> PlayerPane.Lyrics
                         queueOpen -> PlayerPane.Queue
@@ -2014,6 +2022,8 @@ fun NowPlayingScreen(
                     mainPane = { compact ->
                         LandscapeMainPane(
                             compact = compact,
+                            maxContentWidth = if (tabletPlayer) 600.dp else PLAYER_MAX_WIDTH,
+                            lyricStripBottomGap = if (tabletPlayer) 12.dp else 0.dp,
                             caption = if (hideSongStatus) null else playbackOriginText(song, playedBy),
                             onOpenCaption = openPlaybackOrigin,
                             credits = {
@@ -2028,7 +2038,7 @@ fun NowPlayingScreen(
                                     onOpenArtist = onOpenArtist,
                                 )
                             },
-                            lyricStrip = if (syncedLyricsEnabled) {
+                            lyricStrip = if (syncedLyricsEnabled && (!tabletPlayer || !lyricsOpen)) {
                                 {
                                     CurrentLyricStrip(
                                         lines = lyricsTranslation.displayedLyrics,
@@ -2066,17 +2076,21 @@ fun NowPlayingScreen(
                                 }
                             },
                             transport = {
-                                TransportRow(
-                                    isPlaying = isPlaying,
-                                    isLoading = isLoading || audioVersionSwitching,
-                                    previousEnabled = !controlsLocked &&
-                                        (hasPrevious || pastRestartPoint),
-                                    nextEnabled = !controlsLocked && hasNext,
-                                    onPrevious = onPrevious,
-                                    onPlayPause = onPlayPause,
-                                    onNext = onNext,
-                                    compact = compact,
-                                )
+                                val row: @Composable () -> Unit = {
+                                    TransportRow(
+                                        isPlaying = isPlaying,
+                                        isLoading = isLoading || audioVersionSwitching,
+                                        previousEnabled = !controlsLocked &&
+                                            (hasPrevious || pastRestartPoint),
+                                        nextEnabled = !controlsLocked && hasNext,
+                                        onPrevious = onPrevious,
+                                        onPlayPause = onPlayPause,
+                                        onNext = onNext,
+                                        compact = compact,
+                                    )
+                                }
+                                if (tabletPlayer) TabletTransportControls(shuffleEnabled, repeatMode,
+                                    onToggleShuffle, onCycleRepeat, row) else row()
                             },
                             volume = if (hideVolumeBar) {
                                 null

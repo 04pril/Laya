@@ -55,6 +55,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.shape.CircleShape
@@ -62,6 +63,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.VolumeDown
 import androidx.compose.material.icons.automirrored.rounded.VolumeUp
+import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Videocam
@@ -499,6 +501,61 @@ internal fun TransportRow(
             enabled = nextEnabled,
             haptic = Haptic.SkipNext,
         )
+    }
+}
+
+/** Tablet transport keeps shuffle/repeat at the edges and the three primary buttons together. */
+@Composable
+internal fun TabletTransportControls(
+    shuffleEnabled: Boolean,
+    repeatMode: Int,
+    onToggleShuffle: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    transport: @Composable () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        BottomGlyph(icon = LayaIcons.Shuffle,
+            contentDescription = stringResource(if (shuffleEnabled) Res.string.shuffle_on else Res.string.shuffle_off),
+            onClick = onToggleShuffle, highlighted = shuffleEnabled, tapWindowMs = SHUFFLE_TAP_WINDOW_MS)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Box(Modifier.widthIn(max = 300.dp).fillMaxWidth()) { transport() }
+        }
+        BottomGlyph(icon = if (repeatMode == RepeatModes.ONE) Icons.Rounded.RepeatOne else LayaIcons.Repeat,
+            contentDescription = stringResource(when (repeatMode) {
+                RepeatModes.ONE -> Res.string.repeat_one
+                RepeatModes.ALL -> Res.string.repeat_all
+                else -> Res.string.repeat_off
+            }), onClick = onCycleRepeat, highlighted = repeatMode != RepeatModes.OFF)
+    }
+}
+
+/** Output at the lower left, autoplay/lyrics/queue at the lower right, independent of the open panel. */
+@Composable
+internal fun TabletPlayerActionRow(
+    lyricsOpen: Boolean, queueOpen: Boolean, autoplayEnabled: Boolean, accountName: String?,
+    onToggleLyrics: () -> Unit, onToggleQueue: () -> Unit, onToggleAutoplay: () -> Unit,
+    onOpenOutput: () -> Unit, onListenTogether: () -> Unit, onOpenMembers: () -> Unit,
+    videoToggle: VideoToggle? = null,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) {
+            OutputActions(onOpenOutput, onListenTogether, onOpenMembers, videoToggle)
+            Spacer(Modifier.width(8.dp))
+            Box(Modifier.weight(1f)) {
+                Box(Modifier.widthIn(max = 200.dp).fillMaxWidth()) {
+                    OutputCaption(accountName, onOpenOutput, onOpenMembers, Modifier.fillMaxWidth())
+                }
+            }
+        }
+        Spacer(Modifier.width(16.dp))
+        BottomGlyph(icon = LayaIcons.Infinity,
+            contentDescription = stringResource(if (autoplayEnabled) Res.string.autoplay_on else Res.string.autoplay_off),
+            onClick = onToggleAutoplay, highlighted = autoplayEnabled, tapWindowMs = AUTOPLAY_TAP_WINDOW_MS)
+        BottomGlyph(icon = LayaIcons.LyricsQuote,
+            contentDescription = stringResource(if (lyricsOpen) Res.string.close_lyrics else Res.string.open_lyrics),
+            onClick = onToggleLyrics, highlighted = lyricsOpen)
+        BottomGlyph(icon = LayaIcons.Queue, contentDescription = stringResource(Res.string.up_next),
+            onClick = onToggleQueue, highlighted = queueOpen)
     }
 }
 
@@ -1091,6 +1148,7 @@ internal fun OutputCaption(
     onOpenOutput: () -> Unit,
     /** Who's in it, before the settings page — see [ListenTogetherMembersSheet]. */
     onOpenMembers: () -> Unit,
+    modifier: Modifier = Modifier.fillMaxWidth(0.65f),
 ) {
     val badge = rememberPartyBadge()
     val outputName = rememberAudioOutputName(accountName)
@@ -1122,8 +1180,7 @@ internal fun OutputCaption(
     val jamName = badge.hostFirstName
         ?.let { stringResource(Res.string.listen_together_jam, it) }
         ?: stringResource(Res.string.listen_together_jam_unnamed)
-    val captionModifier = Modifier
-        .fillMaxWidth(0.65f)
+    val captionModifier = modifier
         .clickable { if (badge.inParty) onOpenMembers() else onOpenOutput() }
     val prominent = PlayerPlatform.host.prominentOutputCaption
     val captionStyle = MaterialTheme.typography.labelSmall.copy(

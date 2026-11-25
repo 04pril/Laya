@@ -168,7 +168,7 @@ Add this URL in **Sources → +** to install the current regular release and rec
 - A free Apple ID signs apps for **7 days**. SideStore refreshes Laya in the background while the VPN is on; you can also refresh by hand in My Apps.
 - A free account allows 3 active sideloaded apps and 10 App IDs per week. Laya plus its widgets use 2 App IDs.
 - To update, install the newer IPA over the old one. Your data stays.
-- Laya has iPhone widgets (iOS 17+). On iPad it runs as a scaled iPhone app.
+- Laya has iPhone widgets (iOS 17+). iPad supports native full-screen, portrait/landscape rotation, and resizable windows.
 
 ---
 
@@ -200,7 +200,7 @@ No account is required to search and play. Signing in with Google personalizes r
 Yes — word and syllable-level synced lyrics with an Apple Music–style animation, pulled from LRCLIB, Musixmatch, Genius, lrc.red and several other providers, with translation and romanization.
 
 **Which devices does Laya run on?**
-Android phones and tablets, iPhone and iPad (iPhone compatibility mode), Windows, macOS (Apple Silicon and Intel), Linux, Android TV and Wear OS watches.
+Android phones and tablets, iPhone and iPad, Windows, macOS (Apple Silicon and Intel), Linux, Android TV and Wear OS watches.
 
 **Is Laya affiliated with YouTube Music or Spotify?**
 No. Laya is an independent third-party client and is not affiliated with, endorsed by or connected to Google, YouTube, Spotify, Tidal, Qobuz or Deezer.

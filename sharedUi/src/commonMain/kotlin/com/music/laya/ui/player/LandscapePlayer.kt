@@ -150,7 +150,12 @@ internal fun LandscapePlayerLayout(
     lyricsPane: @Composable () -> Unit,
     queuePane: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    tablet: Boolean = false,
 ) {
+    if (tablet) {
+        TabletPlayerLayout(pane, background, artwork, actions, mainPane, lyricsPane, queuePane, modifier)
+        return
+    }
     Box(modifier = modifier.fillMaxSize()) {
         background(Modifier.fillMaxSize())
 
@@ -375,10 +380,12 @@ internal fun LandscapeMainPane(
     /** Null where Settings hides the volume bar. */
     volume: (@Composable () -> Unit)?,
     modifier: Modifier = Modifier,
+    maxContentWidth: androidx.compose.ui.unit.Dp = PLAYER_MAX_WIDTH,
+    lyricStripBottomGap: androidx.compose.ui.unit.Dp = 0.dp,
 ) {
     Column(
         modifier = modifier
-            .widthIn(max = PLAYER_MAX_WIDTH)
+            .widthIn(max = maxContentWidth)
             .fillMaxWidth(),
     ) {
         if (caption != null) {
@@ -392,7 +399,10 @@ internal fun LandscapeMainPane(
         }
         credits()
         Spacer(Modifier.height(if (compact) 2.dp else 10.dp))
-        lyricStrip?.invoke()
+        if (lyricStrip != null) {
+            lyricStrip()
+            Spacer(Modifier.height(lyricStripBottomGap))
+        }
         scrubber()
         Spacer(Modifier.height(if (compact) 0.dp else 8.dp))
         transport()

@@ -92,6 +92,16 @@ kotlin {
         jvmTest.dependencies {
             implementation(kotlin("test"))
             implementation("junit:junit:4.13.2")
+            // Offscreen Compose rendering exercises the actual tablet layout.
+            val os = System.getProperty("os.name").lowercase()
+            val platform = when {
+                os.contains("mac") -> "macos"
+                os.contains("win") -> "windows"
+                else -> "linux"
+            }
+            val arch = if (System.getProperty("os.arch") in listOf("aarch64", "arm64")) "arm64" else "x64"
+            runtimeOnly("org.jetbrains.compose.desktop:desktop-jvm-$platform-$arch:$CMP_DESKTOP")
+            runtimeOnly("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
         }
         androidMain.dependencies {
             // The phone's own versions, so nothing here moves them.
