@@ -50,6 +50,8 @@ import com.music.laya.playback.toneCurve
 import com.music.laya.playback.QueueTimeline
 import com.music.laya.playback.QueueTimeline.asQueueEntry
 import com.music.laya.ui.player.RepeatModes
+import com.music.laya.ui.player.handoffPlayerVersion
+import com.music.laya.ui.player.VersionPlaybackMode
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CompletableDeferred
@@ -797,9 +799,16 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
                 playingOpened?.takeIf { it.first == s.videoId }?.let { versionOpened[s.videoId] = it.second }
                 val o = versionOpened[swapped.videoId] ?: withContext(ioDispatcher) { youtube(swapped.videoId) }
                 if (dismissalGeneration != generation || song?.videoId != s.videoId || index != at) return@launch onDone(false)
-                PlaybackTracker.onVersionSwapped(s, swapped)
-                queue = queue.toMutableList().also { it[at] = swapped }
-                hand(swapped, o, next = false, swap = true)
+                val resumeAt = position.positionMs
+                handoffPlayerVersion(s.videoId, playingOpened?.first, isLoading,
+                    cancelPendingStart = { startJob?.cancel() },
+                ) { mode ->
+                    TrackLog.d("Laya", "iOS version handoff $mode at $resumeAt ms", about = s.videoId)
+                    PlaybackTracker.onVersionSwapped(s, swapped)
+                    queue = queue.toMutableList().also { it[at] = swapped }
+                    hand(swapped, o, next = false, swap = mode == VersionPlaybackMode.SWAP)
+                    if (mode == VersionPlaybackMode.START && resumeAt > 0) engine.seekTo(resumeAt)
+                }
                 announce()
                 preResolveNext() // the swap dropped the engine's queued item
                 IosPlayerStore.saveQueue(queue, index)

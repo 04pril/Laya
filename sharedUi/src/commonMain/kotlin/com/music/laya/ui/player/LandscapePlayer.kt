@@ -38,6 +38,7 @@ import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -520,6 +521,7 @@ internal fun LandscapeLyricsPane(
     karaokeToggle: @Composable () -> Unit = { KaraokeToggleButton(enabled = true) },
     panel: @Composable (Modifier) -> Unit,
 ) {
+    val showProvider by com.music.laya.data.settings.IosCustomization.showLyricsProvider.collectAsState()
     Box(modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize()) {
             Box(Modifier.weight(1f).fillMaxWidth()) {
@@ -538,9 +540,9 @@ internal fun LandscapeLyricsPane(
             }
             if (picking) {
                 Box(Modifier.fillMaxWidth()) { pickBar() }
-            } else {
+            } else if (!controlsAtTopEnd || showProvider) {
                 Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.width(SIDE_SLOT_WIDTH).height(34.dp)) { if (hasLyrics) romanizationToggle() }
+                    Box(Modifier.width(SIDE_SLOT_WIDTH).height(34.dp)) { if (hasLyrics && !controlsAtTopEnd) romanizationToggle() }
                     Box(Modifier.weight(1f).padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
                         LyricsStatusWithChange(status = status, onStatusClick = onStatusClick)
                     }
@@ -561,6 +563,7 @@ internal fun LandscapeLyricsPane(
             ) {
                 karaokeToggle()
                 translationToggle()
+                romanizationToggle()
             }
         }
     }

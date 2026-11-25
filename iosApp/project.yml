@@ -9,7 +9,7 @@ settings:
   base:
     # A tag build overrides this with the tag's version (.github/workflows/release.yml).
     MARKETING_VERSION: "1.9.6"
-    CURRENT_PROJECT_VERSION: "48"
+    CURRENT_PROJECT_VERSION: "49"
 packages:
   # Vendored: Microsoft deleted microsoft/onnxruntime-swift-package-manager (and
   # onnxruntime itself) in November 2026, so the remote package cannot resolve.

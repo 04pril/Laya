@@ -74,11 +74,14 @@ class TabletPlayerLayoutTest {
                 else -> null
             }
         } as PlayerHost
+        val priorProvider = com.music.laya.data.settings.IosCustomization.showLyricsProvider.value
         val priorHideParty = com.music.laya.data.settings.IosCustomization.hideParty.value
         try {
         com.music.laya.data.settings.IosCustomization.hideParty.value = true
         for ((width, height) in listOf(1280 to 960, 1024 to 1366, 1024 to 768, 834 to 1194, 768 to 1024, 891 to 665, 1301 to 970)) {
             for (pane in PlayerPane.entries) {
+                val showProvider = width != 891
+                com.music.laya.data.settings.IosCustomization.showLyricsProvider.value = showProvider
                 val bounds = mutableMapOf<String, Rect>()
                 var outputLabel = ""; var queueLabel = ""
                 PlayerPlatform.install(object : PlayerHost by host {
@@ -123,7 +126,7 @@ class TabletPlayerLayoutTest {
                             },
                             lyricsPane = { Box(Modifier.fillMaxSize().onGloballyPositioned { bounds["panel"] = it.boundsInRoot() }) {
                                 LandscapeLyricsPane(true, "", "Lyrics: preview", {},
-                                    romanizationToggle = { Text("◎", color = Color.White) },
+                                    romanizationToggle = { Text("◎", color = Color.White, modifier = Modifier.size(34.dp).onGloballyPositioned { bounds["romanization"] = it.boundsInRoot() }) },
                                     translationToggle = { Text("文A", color = Color.White, modifier = Modifier.size(34.dp).onGloballyPositioned { bounds["translation"] = it.boundsInRoot() }) },
                                     controlsAtTopEnd = true,
                                     karaokeToggle = { Text("♬", color = Color.White, modifier = Modifier.size(34.dp).onGloballyPositioned { bounds["karaoke"] = it.boundsInRoot() }) },
@@ -177,10 +180,15 @@ class TabletPlayerLayoutTest {
                         assertTrue(bounds.getValue("panel").left >= art.right)
                         if (pane == PlayerPane.Queue) assertNotNull(bounds["strip"])
                         if (pane == PlayerPane.Lyrics) {
+                            val statusVisible = semantics.any { node -> node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Lyrics: preview" } == true }
+                            assertEquals(showProvider, statusVisible)
                             val karaoke = bounds.getValue("karaoke"); val translation = bounds.getValue("translation")
                             val panel = bounds.getValue("panel")
                             assertTrue(karaoke.bottom < translation.top)
                             assertEquals(karaoke.right, translation.right)
+                            val romanization = bounds.getValue("romanization")
+                            assertTrue(translation.bottom < romanization.top)
+                            assertEquals(translation.right, romanization.right)
                             assertTrue(translation.bottom < panel.center.y)
                             assertTrue(bounds.getValue("words").right < translation.left)
                         }
@@ -192,6 +200,9 @@ class TabletPlayerLayoutTest {
                 } finally { scene.close() }
             }
         }
-        } finally { com.music.laya.data.settings.IosCustomization.hideParty.value = priorHideParty }
+        } finally {
+            com.music.laya.data.settings.IosCustomization.hideParty.value = priorHideParty
+            com.music.laya.data.settings.IosCustomization.showLyricsProvider.value = priorProvider
+        }
     }
 }
