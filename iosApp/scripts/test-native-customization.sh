@@ -34,3 +34,6 @@ PLIST
 xcrun swiftc "$task_tmp/SignedApplicationGroups.swift" "$task_tmp/main.swift" -o "$task_tmp/groups"
 codesign --force --sign - --entitlements "$task_tmp/groups.plist" "$task_tmp/groups"
 "$task_tmp/groups"
+
+xcrun clang -fobjc-arc -framework Foundation "$task_root/iosApp/tests/NowPlayingLaunchTests.m" -o "$task_tmp/nowplaying"
+"$task_tmp/nowplaying"

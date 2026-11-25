@@ -99,8 +99,10 @@ fun OnboardingScreen(
     onSignIn: (() -> Unit)?,
     onFinish: () -> Unit,
     modifier: Modifier = Modifier,
+    beforeName: (@Composable ColumnScope.(onContinue: () -> Unit) -> Unit)? = null,
 ) {
-    var page by rememberSaveable { mutableIntStateOf(PAGE_NAME) }
+    var page by rememberSaveable { mutableIntStateOf(if (beforeName != null) -1 else PAGE_NAME) }
+    LaunchedEffect(beforeName == null) { if (beforeName == null && page == -1) page = PAGE_NAME }
     var name by rememberSaveable { mutableStateOf(initialName) }
     val focusManager = LocalFocusManager.current
 
@@ -113,7 +115,7 @@ fun OnboardingScreen(
 
     // The mesh never settles on one palette: each crossfade is as long as the
     // hold, so one runs straight into the next.
-    val palette = cyclingMeshPalette(if (page == PAGE_NAME) WelcomeMeshPalettes else ConnectPalettes)
+    val palette = cyclingMeshPalette(if (page != PAGE_CONNECT) WelcomeMeshPalettes else ConnectPalettes)
 
     Box(
         modifier
@@ -163,6 +165,7 @@ fun OnboardingScreen(
         ) { shown ->
             OnboardingPage {
                 when (shown) {
+                    -1 -> beforeName?.invoke(this) { page = PAGE_NAME }
                     PAGE_NAME -> NamePage(
                         name = name,
                         onNameChange = { name = it.take(NAME_LIMIT) },
@@ -223,7 +226,7 @@ private fun ColumnScope.NamePage(
         }
     }
     Spacer(Modifier.height(24.dp))
-    Title(stringResource(Res.string.onboarding_title))
+    OnboardingTitle(stringResource(Res.string.onboarding_title))
 
     Spacer(Modifier.weight(1f))
 
@@ -244,7 +247,7 @@ private fun ColumnScope.NamePage(
         modifier = Modifier.padding(horizontal = 4.dp),
     )
     Spacer(Modifier.height(28.dp))
-    PillButton(
+    OnboardingPillButton(
         label = stringResource(Res.string.onboarding_next),
         onClick = onNext,
         enabled = name.isNotBlank(),
@@ -262,7 +265,7 @@ private fun ColumnScope.ConnectPage(
     Spacer(Modifier.height(16.dp))
     BackButton(onBack)
     Spacer(Modifier.height(20.dp))
-    Title(stringResource(Res.string.onboarding_connect_title))
+    OnboardingTitle(stringResource(Res.string.onboarding_connect_title))
     Spacer(Modifier.height(14.dp))
     Text(
         text = stringResource(Res.string.onboarding_connect_body),
@@ -274,7 +277,7 @@ private fun ColumnScope.ConnectPage(
 
     Spacer(Modifier.weight(1f))
 
-    PillButton(
+    OnboardingPillButton(
         label = stringResource(Res.string.onboarding_sign_in_google),
         onClick = onSignIn,
         primary = true,
@@ -287,7 +290,7 @@ private fun ColumnScope.ConnectPage(
         },
     )
     Spacer(Modifier.height(12.dp))
-    PillButton(
+    OnboardingPillButton(
         label = stringResource(Res.string.onboarding_skip_sign_in),
         onClick = onSkip,
         primary = false,
@@ -297,7 +300,7 @@ private fun ColumnScope.ConnectPage(
 
 /** Replay's heading, scaled up: the one line each page exists to say. */
 @Composable
-private fun Title(text: String) {
+internal fun OnboardingTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.displayLarge.copy(
@@ -361,7 +364,7 @@ private fun NameField(value: String, onValueChange: (String) -> Unit, onDone: ()
  * the pair reads as a choice rather than a button and an afterthought.
  */
 @Composable
-private fun PillButton(
+internal fun OnboardingPillButton(
     label: String,
     onClick: () -> Unit,
     primary: Boolean,

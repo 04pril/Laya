@@ -1414,8 +1414,10 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             onNameChosen = {}, // Phase 6: Listen Together nickname
                             onSignIn = { loginGate = true },
                             onFinish = AppSettings::setOnboardingComplete,
+                            beforeName = if (proxyWelcomeDone) null else { next ->
+                                IosProxyWelcome { proxyWelcomeDone = true; next() }
+                            },
                         )
-                        if (!proxyWelcomeDone) IosProxyWelcome { proxyWelcomeDone = true }
                     }
 
                     if (loginGate) androidx.compose.material3.AlertDialog(

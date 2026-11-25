@@ -350,7 +350,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if artworkUrl.hasPrefix("/") {
             if let image = UIImage(contentsOfFile: artworkUrl) {
                 nowPlaying[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-                nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nowPlaying
+                publishNowPlayingInfo()
             }
             return
         }
@@ -375,7 +375,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 guard let self, self.nowPlaying[MPMediaItemPropertyTitle] as? String == expectedTitle else { return }
                 self.nowPlaying[MPMediaItemPropertyArtwork] =
                     MPMediaItemArtwork(boundsSize: square.size) { _ in square }
-                self.nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = self.nowPlaying
+                self.publishNowPlayingInfo()
             }
         }
         artworkTask?.resume()
@@ -1154,6 +1154,11 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     /// The lock screen extrapolates the position from elapsed time + rate, so
     /// it only needs telling on play/pause/seek/track change, not every tick.
+    private func publishNowPlayingInfo() {
+        nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nowPlaying
+        if !nowPlaying.isEmpty { LayaBindNowPlayingApplication() }
+    }
+
     private func updateNowPlayingTiming() {
         guard !nowPlaying.isEmpty else { return }
         let position = seekingToMs.map { Double($0) / 1000 } ?? player.currentTime().seconds
@@ -1164,7 +1169,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let playing = player.timeControlStatus != .paused
         nowPlaying[MPNowPlayingInfoPropertyPlaybackRate] = player.timeControlStatus == .playing ? Double(speed) : 0.0
         let center = nowPlayingSession.nowPlayingInfoCenter
-        center.nowPlayingInfo = nowPlaying
+        publishNowPlayingInfo()
         // The lock screen's button reads this, not the rate: a pause the app made itself (another device in a
         // Listen Together party) stopped the audio and left the button on Pause.
         center.playbackState = playing ? .playing : .paused
@@ -1190,6 +1195,11 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     private func observeSystemEvents() {
         let center = NotificationCenter.default
+        notificationTokens.append(center.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            if self?.nowPlaying.isEmpty == false { LayaBindNowPlayingApplication() }
+        })
         notificationTokens.append(center.addObserver(
             forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
         ) { [weak self] note in self?.handleInterruption(note) })

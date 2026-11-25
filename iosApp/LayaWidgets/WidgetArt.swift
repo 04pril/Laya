@@ -68,6 +68,85 @@ enum WidgetArt {
         return render(image, rect, scale)
     }
 
+    static func poster(cover: UIImage?) -> UIImage? {
+        guard let cover, let input = CIImage(image: cover) else { return nil }
+        return posterWash(input, cover: cover)
+    }
+
+    /// Liquid Artwork: a blurred sleeve stretched across the card, a second sleeve hue
+    /// near the top, and a restrained dark foot behind the transport.
+    static func posterWash(_ input: CIImage, cover: UIImage) -> UIImage? {
+        let side = max(input.extent.width, input.extent.height)
+        let blur = CIFilter.gaussianBlur()
+        blur.inputImage = input.clampedToExtent()
+        blur.radius = Float(side * 0.115)
+        guard var output = blur.outputImage?.cropped(to: input.extent) else { return nil }
+        let controls = CIFilter.colorControls()
+        controls.inputImage = output
+        controls.saturation = 1.6
+        controls.brightness = 0
+        controls.contrast = 1.0
+        output = controls.outputImage?.cropped(to: input.extent) ?? output
+        let exposure = CIFilter.exposureAdjust()
+        exposure.inputImage = output
+        exposure.ev = -1.5
+        output = exposure.outputImage?.cropped(to: input.extent) ?? output
+        guard let cg = context.createCGImage(output, from: input.extent) else { return nil }
+        let base = UIImage(cgImage: cg)
+        let size = input.extent.size
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
+            base.draw(in: CGRect(origin: .zero, size: size))
+            let accent = liquidAccent(from: cover)
+            let colors = [accent.withAlphaComponent(0.7).cgColor, accent.withAlphaComponent(0).cgColor]
+            if accent.cgColor.alpha > 0,
+               let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 1]) {
+                let center = CGPoint(x: size.width * 0.58, y: 0)
+                renderer.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
+                    endCenter: center, endRadius: size.width * 0.82, options: .drawsBeforeStartLocation)
+            }
+            let shadow = [UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.clear.cgColor]
+            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: shadow as CFArray, locations: [0, 1]) {
+                let center = CGPoint(x: size.width * 0.54, y: size.height * 1.02)
+                renderer.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
+                    endCenter: center, endRadius: size.width * 0.80, options: .drawsBeforeStartLocation)
+            }
+        }
+    }
+
+    /// A second sleeve hue supplies the soft upper light, instead of amplifying its most
+    /// common colour into a flat saturated field. The tint is always read from this cover.
+    private static func liquidAccent(from image: UIImage) -> UIColor {
+        let side = 32
+        var bytes = [UInt8](repeating: 0, count: side * side * 4)
+        guard let cg = image.cgImage, let ctx = CGContext(data: &bytes, width: side, height: side,
+            bitsPerComponent: 8, bytesPerRow: side * 4, space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return .clear }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: side, height: side))
+        let count = 24
+        var weights = [CGFloat](repeating: 0, count: count)
+        var hues = weights
+        for index in stride(from: 0, to: bytes.count, by: 4) {
+            var h: CGFloat = 0, s: CGFloat = 0, b: CGFloat = 0
+            UIColor(red: CGFloat(bytes[index]) / 255, green: CGFloat(bytes[index + 1]) / 255,
+                    blue: CGFloat(bytes[index + 2]) / 255, alpha: 1).getHue(&h, saturation: &s, brightness: &b, alpha: nil)
+            guard s > 0.35, b > 0.2 else { continue }
+            let bin = min(Int(h * CGFloat(count)), count - 1)
+            let weight = s * s * b
+            weights[bin] += weight
+            hues[bin] += h * weight
+        }
+        guard let dominant = weights.indices.max(by: { weights[$0] < weights[$1] }), weights[dominant] > 0 else { return .clear }
+        let secondary = weights.indices.filter {
+            let distance = abs($0 - dominant)
+            return min(distance, count - distance) > 2
+        }.max(by: { weights[$0] < weights[$1] })
+        guard let secondary, weights[secondary] > weights[dominant] * 0.06 else { return .clear }
+        return UIColor(hue: hues[secondary] / weights[secondary], saturation: 0.48, brightness: 0.52, alpha: 1)
+    }
+
     /// [src] centre-cropped to fill [rect] (fillCentreCropped).
     private static func filled(_ src: UIImage, _ rect: CGRect) -> CIImage? {
         guard let cg = src.cgImage else { return nil }

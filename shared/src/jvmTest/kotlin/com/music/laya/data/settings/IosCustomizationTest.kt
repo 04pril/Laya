@@ -32,4 +32,22 @@ class IosCustomizationTest {
         assertEquals(34, IosCustomization.koreanSize.value)
         assertEquals(800, IosCustomization.fontWeight.value)
     }
+    @Test fun mergedProviderPreferencePreservesHiddenChoicesAndNewSelection() {
+        for (source in listOf(false, true)) for (change in listOf(false, true)) {
+            val store = MapSettings()
+            store.putBoolean("ios_show_lyrics_source", source)
+            store.putBoolean("ios_show_lyrics_change", change)
+            IosCustomization.install(store, "ko")
+            assertEquals(source && change, IosCustomization.showLyricsProvider.value)
+            IosCustomization.set("show_lyrics_provider", IosCustomization.showLyricsProvider, true)
+            IosCustomization.install(store, "ko")
+            assertTrue(IosCustomization.showLyricsProvider.value)
+            IosCustomization.set("show_lyrics_provider", IosCustomization.showLyricsProvider, false)
+            IosCustomization.install(store, "ko")
+            assertFalse(IosCustomization.showLyricsProvider.value)
+        }
+        IosCustomization.install(MapSettings(), "en")
+        assertTrue(IosCustomization.showLyricsProvider.value)
+    }
+
 }

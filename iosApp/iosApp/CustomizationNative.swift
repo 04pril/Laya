@@ -37,6 +37,8 @@ final class CustomizationNative: NSObject, IosCustomizationNative {
         return encoded
     }
 
+    func proxyConfiguredReady() -> Bool { YTMUWGSettingEnabled() && proxyReady() }
+
     func proxyReady() -> Bool {
         let current = UserDefaults.standard.dictionary(forKey: "LayaWireGuard") ?? [:]
         guard NSDictionary(dictionary: current).isEqual(to: launchProxySettings) else { return false }

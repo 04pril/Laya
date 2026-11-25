@@ -532,26 +532,25 @@ internal fun LyricsStatusWithChange(
     onStatusClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    val showSource by com.music.laya.data.settings.IosCustomization.showLyricsSource.collectAsState()
-    val showChange by com.music.laya.data.settings.IosCustomization.showLyricsChange.collectAsState()
-    val sourceStatus = LyricsSource.offered.any { status.contains(it.label) }
-    val drawStatus = showSource || !sourceStatus
+    val showProvider by com.music.laya.data.settings.IosCustomization.showLyricsProvider.collectAsState()
+    // Omit the entire layout node, including the caller's padding, when hidden.
+    if (!showProvider) return
     val haptics = rememberHaptics()
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (drawStatus) Text(
+        Text(
             text = status,
             style = MaterialTheme.typography.titleMedium,
             color = LocalPlayerTint.current.copy(alpha = 0.55f),
-            textDecoration = if (onStatusClick != null && showChange) TextDecoration.Underline else null,
+            textDecoration = if (onStatusClick != null) TextDecoration.Underline else null,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f, fill = false)
                 .then(
-                    if (onStatusClick != null && showChange) {
+                    if (onStatusClick != null) {
                         Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -564,11 +563,7 @@ internal fun LyricsStatusWithChange(
                     },
                 ),
         )
-        if (!drawStatus && showChange && onStatusClick != null) {
-            androidx.compose.material3.TextButton(onClick = onStatusClick) {
-                Text(if (com.music.laya.data.settings.IosCustomization.language.collectAsState().value == "ko") "가사 변경" else "Change lyrics", color = LocalPlayerTint.current)
-            }
-        }
+
     }
 }
 

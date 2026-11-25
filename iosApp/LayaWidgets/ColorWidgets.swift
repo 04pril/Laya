@@ -1,6 +1,232 @@
 import SwiftUI
 import WidgetKit
 
+// Poster cards added beside the original three widgets. The wide card follows WidgetPod's medium
+// now-playing widget: Liquid Artwork, curved cover, track/artist and Apple Music glyph.
+
+struct PosterBackground: View {
+    var art: PosterArtwork?
+
+    var body: some View {
+        if let art {
+            Image(uiImage: art.wash)
+                .resizable()
+                .accessibilityHidden(true)
+        } else {
+            Color(uiColor: UIColor(white: 0.45, alpha: 1))
+        }
+    }
+}
+
+struct PosterCover: View {
+    var art: PosterArtwork?
+    var side: CGFloat
+    var cornerRadius: CGFloat? = nil
+
+    /// WidgetPod's curved cover is about 11.5% of the art side.
+    private var radius: CGFloat { cornerRadius ?? min(max(side * 0.115, 8), side * 0.2) }
+
+    var body: some View {
+        Group {
+            if let art {
+                Image(uiImage: art.cover).resizable().layaArtwork().scaledToFill()
+            } else {
+                Image(systemName: "music.note").resizable().scaledToFit().padding(16).foregroundStyle(.white.opacity(0.7))
+            }
+        }
+        .frame(width: side, height: side)
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .circular))
+        .shadow(color: .black.opacity(0.22), radius: max(4, side * 0.045), y: max(2, side * 0.03))
+        .accessibilityLabel("Album artwork")
+    }
+}
+
+/// Apple Music player icon in Glyph style: two beamed eighth notes, using the reference silhouette.
+struct PosterNote: View {
+    var art: PosterArtwork?
+    var size: CGFloat
+
+    var body: some View {
+        Image(uiImage: UIImage(named: "WidgetMusicGlyph") ?? UIImage())
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .foregroundStyle(Color(red: 1, green: 0.96, blue: 0.77).opacity(art == nil ? 0.55 : 1))
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
+/// The reference’s small card is its own layout: upper-left artwork, upper-right glyph,
+/// then single-line title and artist aligned left above a full-width transport row.
+struct PosterSquareWidgetView: View {
+    var snapshot: LayaWidgetSnapshot
+    var art: PosterArtwork?
+
+
+    var body: some View {
+        let face = PosterFace(snapshot: snapshot)
+        GeometryReader { proxy in
+            let scale = min(proxy.size.width, proxy.size.height) / 158
+            ZStack(alignment: .topLeading) {
+                PosterCover(art: art, side: 67 * scale, cornerRadius: 10.5 * scale)
+                    .position(x: 49 * scale, y: 49 * scale)
+                Text(face.title)
+                    .font(.system(size: 12.5 * scale, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
+                    .position(x: 79 * scale, y: 95 * scale)
+                if face.hasTrack, let artist = face.artist {
+                    Text(artist)
+                        .font(.system(size: 12.5 * scale, weight: .regular))
+                        .foregroundStyle(Color.white.opacity(0.88))
+                        .lineLimit(1)
+                        .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
+                        .position(x: 79 * scale, y: 111 * scale)
+                }
+                PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
+                              opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 16.5 * scale,
+                              height: 36 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 26 * scale, y: 135.5 * scale)
+                PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
+                              opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
+                              height: 36 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 79 * scale, y: 135.5 * scale)
+                PosterControl(command: "next", symbol: "forward.fill", label: "Next",
+                              opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 16.5 * scale,
+                              height: 36 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 132 * scale, y: 135.5 * scale)
+                PosterNote(art: art, size: 22 * scale)
+                    .position(x: 132 * scale, y: 26 * scale)
+            }
+            .frame(width: 158 * scale, height: 158 * scale)
+            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .dynamicTypeSize(.large)
+        .posterWideBackground() { PosterBackground(art: art) }
+        .overlay {
+            ContainerRelativeShape()
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
+                .allowsHitTesting(false)
+        }
+        .widgetURL(openPlayerURL)
+    }
+}
+
+/// WidgetPod reference: default artwork, curved corners, Liquid Artwork, title and artist.
+/// Measured in a 338×158 medium widget; explicit bounds keep long titles and Dynamic Type
+/// from pushing the controls into the artwork or out to the edges.
+struct PosterWideWidgetView: View {
+    var snapshot: LayaWidgetSnapshot
+    var art: PosterArtwork?
+
+
+    var body: some View {
+        let face = PosterFace(snapshot: snapshot)
+        GeometryReader { proxy in
+            let scale = min(proxy.size.width / 338, proxy.size.height / 158)
+            ZStack(alignment: .topLeading) {
+                PosterCover(art: art, side: 135.5 * scale)
+                    .position(x: 79.25 * scale, y: 79 * scale)
+                VStack(spacing: 2 * scale) {
+                    Text(face.title)
+                        .font(.system(size: 14 * scale, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: 148 * scale)
+                    if face.hasTrack, let artist = face.artist {
+                        Text(artist)
+                            .font(.system(size: 13.5 * scale, weight: .regular))
+                            .foregroundStyle(Color.white.opacity(0.88))
+                            .lineLimit(1)
+                            .frame(width: 148 * scale)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: 148 * scale)
+                .position(x: 243 * scale, y: 64 * scale)
+                PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
+                              opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 18 * scale,
+                              height: 38 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 183 * scale, y: 119 * scale)
+                PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
+                              opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
+                              height: 38 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 243 * scale, y: 119 * scale)
+                PosterControl(command: "next", symbol: "forward.fill", label: "Next",
+                              opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 18 * scale,
+                              height: 38 * scale, fillsWidth: false, weight: .regular)
+                    .position(x: 303 * scale, y: 119 * scale)
+                PosterNote(art: art, size: 22 * scale)
+                    .position(x: 312 * scale, y: 25 * scale)
+            }
+            .frame(width: 338 * scale, height: 158 * scale)
+            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
+        }
+        .dynamicTypeSize(.large)
+        .posterWideBackground() { PosterBackground(art: art) }
+        .overlay {
+            ContainerRelativeShape()
+                .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
+                .allowsHitTesting(false)
+        }
+        .widgetURL(openPlayerURL)
+    }
+}
+
+private extension View {
+    func posterWideBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
+        self.containerBackground(for: .widget) { background() }
+    }
+}
+
+struct PosterArtwork {
+    let cover: UIImage
+    let wash: UIImage
+}
+
+struct PosterFace {
+    let snapshot: LayaWidgetSnapshot
+    var title: String { snapshot.hasTrack ? snapshot.title : "Laya" }
+    var artist: String? { snapshot.artist.isEmpty ? nil : snapshot.artist }
+    var hasTrack: Bool { snapshot.hasTrack }
+    var toggleSymbol: String { snapshot.isPlaying ? "pause.fill" : "play.fill" }
+    var toggleLabel: String { snapshot.isPlaying ? "Pause" : "Play" }
+    enum Action { case previous, next, togglePlayPause }
+    func opacity(_ action: Action) -> Double {
+        switch action {
+        case .previous: return snapshot.hasTrack && snapshot.hasPrevious ? 1 : 90.0 / 255
+        case .next: return snapshot.hasTrack && snapshot.hasNext ? 1 : 90.0 / 255
+        case .togglePlayPause: return 1
+        }
+    }
+}
+
+private struct PosterControl: View {
+    let command: String
+    let symbol: String
+    let label: String
+    let opacity: Double
+    let isLive: Bool
+    let glyph: CGFloat
+    let height: CGFloat
+    let fillsWidth: Bool
+    let weight: Font.Weight
+    var body: some View {
+        let icon = Image(systemName: symbol)
+            .font(.system(size: glyph, weight: weight))
+            .foregroundStyle(.white).opacity(opacity)
+            .frame(width: height, height: height).contentShape(Rectangle())
+        if isLive {
+            Button(intent: LayaWidgetIntent(command)) { icon }.buttonStyle(.plain).accessibilityLabel(label)
+        } else { icon.accessibilityLabel(label) }
+    }
+}
+
 extension Image {
     @ViewBuilder func layaArtwork() -> some View {
         if #available(iOS 18.0, *) { widgetAccentedRenderingMode(.fullColor) }
@@ -8,81 +234,29 @@ extension Image {
     }
 }
 
-private struct ColorWidgetView: View {
-    let entry: LayaEntry
-    let small: Bool
-    private var snapshot: LayaWidgetSnapshot { entry.snapshot }
-
-    private func cover(_ size: CGFloat) -> some View {
-        Group {
-            if let art = entry.art { Image(uiImage: art).resizable().layaArtwork().scaledToFill() }
-            else { Image(systemName: "music.note").resizable().scaledToFit().padding(14).foregroundStyle(.white.opacity(0.8)) }
-        }
-        .frame(width: size, height: size)
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.115))
-        .shadow(color: .black.opacity(0.25), radius: 5, y: 3)
-    }
-
-    private var title: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(snapshot.hasTrack ? snapshot.title : "Laya").font(.system(size: small ? 14 : 16, weight: .semibold)).lineLimit(small ? 1 : 2)
-            Text(snapshot.hasTrack ? snapshot.artist : "Play your music").font(.system(size: 12)).foregroundStyle(.white.opacity(0.75)).lineLimit(1)
-        }.frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var controls: some View {
-        HStack(spacing: small ? 12 : 20) {
-            WidgetButton(glyph: "ic_widget_previous", command: "previous", size: 30, inset: 5, enabled: snapshot.hasTrack && snapshot.hasPrevious)
-            WidgetButton(glyph: snapshot.isPlaying ? "ic_widget_pause" : "ic_widget_play", command: "toggle", size: 36, inset: 5, enabled: snapshot.hasTrack)
-            WidgetButton(glyph: "ic_widget_next", command: "next", size: 30, inset: 5, enabled: snapshot.hasTrack && snapshot.hasNext)
-        }
-    }
-
-    var body: some View {
-        ZStack {
-            // Also drawn as content: removing a widget's container background must not erase its artwork.
-            if let wash = entry.face { Image(uiImage: wash).resizable().layaArtwork().scaledToFill().opacity(0.7) }
-            LinearGradient(colors: [.black.opacity(0.08), .black.opacity(0.65)], startPoint: .top, endPoint: .bottom)
-            if small {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack { cover(48); Spacer(); Image(systemName: "music.note").font(.system(size: 22, weight: .semibold)).opacity(0.8) }
-                    title
-                    controls.frame(maxWidth: .infinity)
-                }.padding(14)
-            } else {
-                HStack(spacing: 16) {
-                    cover(112)
-                    VStack(alignment: .leading, spacing: 9) { title; controls }
-                }.padding(16)
-            }
-        }
-        .foregroundStyle(.white)
-        .clipped()
-        .containerBackground(for: .widget) { Color(red: 0.13, green: 0.16, blue: 0.22) }
-        .widgetURL(openPlayerURL)
-    }
-}
-
 struct ColorMediumWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "LayaColorMedium", provider: LayaProvider(face: { _ in .body })) {
-            ColorWidgetView(entry: $0, small: false)
+        StaticConfiguration(kind: "LayaColorMedium", provider: LayaProvider(face: { _ in .poster })) { entry in
+            PosterWideWidgetView(snapshot: entry.snapshot, art: posterArt(entry))
         }
-        .configurationDisplayName("Color · 4×2")
-        .description("Album colors, artwork and playback controls.")
-        .supportedFamilies([.systemMedium])
-        .contentMarginsDisabled()
+        .configurationDisplayName("WidgetPod · 4×2")
+        .description("Liquid Artwork, curved cover and playback controls.")
+        .supportedFamilies([.systemMedium]).contentMarginsDisabled()
     }
 }
 
 struct ColorSmallWidget: Widget {
     var body: some WidgetConfiguration {
-        StaticConfiguration(kind: "LayaColorSmall", provider: LayaProvider(face: { _ in .body })) {
-            ColorWidgetView(entry: $0, small: true)
+        StaticConfiguration(kind: "LayaColorSmall", provider: LayaProvider(face: { _ in .poster })) { entry in
+            PosterSquareWidgetView(snapshot: entry.snapshot, art: posterArt(entry))
         }
-        .configurationDisplayName("Color · 2×2")
-        .description("A compact card with album colors and playback controls.")
-        .supportedFamilies([.systemSmall])
-        .contentMarginsDisabled()
+        .configurationDisplayName("WidgetPod · 2×2")
+        .description("Liquid Artwork, artwork and playback controls.")
+        .supportedFamilies([.systemSmall]).contentMarginsDisabled()
     }
+}
+
+private func posterArt(_ entry: LayaEntry) -> PosterArtwork? {
+    guard let cover = entry.art, let wash = entry.face else { return nil }
+    return PosterArtwork(cover: cover, wash: wash)
 }

@@ -14,8 +14,7 @@ object IosCustomization {
     val openPlayer = MutableStateFlow(true)
     val downloadLikes = MutableStateFlow(false)
     val keepCarScreenOn = MutableStateFlow(false)
-    val showLyricsSource = MutableStateFlow(true)
-    val showLyricsChange = MutableStateFlow(true)
+    val showLyricsProvider = MutableStateFlow(true)
     val separateFonts = MutableStateFlow(false)
     val fontSize = MutableStateFlow(34)
     val fontWeight = MutableStateFlow(800)
@@ -30,10 +29,13 @@ object IosCustomization {
         language.value = settings.getString("app_language_override", defaultLanguage).let { if (it == "ko") "ko" else "en" }
         listOf("simple_footer" to simpleFooter, "hide_party" to hideParty, "hide_video" to hideVideo,
             "open_player" to openPlayer, "download_likes" to downloadLikes, "keep_car_screen_on" to keepCarScreenOn,
-            "show_lyrics_source" to showLyricsSource, "show_lyrics_change" to showLyricsChange,
             "separate_fonts" to separateFonts).forEach { (key, flow) ->
             flow.value = settings.getBoolean("ios_$key", key in setOf("simple_footer", "hide_party", "hide_video", "open_player", "show_lyrics_source", "show_lyrics_change"))
         }
+        // Preserve an older decision to hide either part when merging the two switches.
+        showLyricsProvider.value = settings.getBoolean("ios_show_lyrics_provider",
+            settings.getBoolean("ios_show_lyrics_source", true) && settings.getBoolean("ios_show_lyrics_change", true))
+        settings.putBoolean("ios_show_lyrics_provider", showLyricsProvider.value)
         listOf("font_size" to fontSize, "font_weight" to fontWeight, "korean_size" to koreanSize,
             "korean_weight" to koreanWeight, "latin_size" to latinSize, "latin_weight" to latinWeight).forEach { (key, flow) ->
             val range = if (key.endsWith("size")) 18..52 else 100..900

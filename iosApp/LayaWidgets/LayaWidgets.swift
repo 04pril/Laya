@@ -104,7 +104,7 @@ struct LayaEntry: TimelineEntry {
     let tiles: [UIImage?]
 }
 
-enum Face { case media(band: CGFloat), body }
+enum Face { case media(band: CGFloat), body, poster }
 
 /// Reads the snapshot the app wrote and draws this widget's pictures at its size. One entry, never refreshed on a
 /// schedule: the app reloads the timelines whenever what they show changes (LayaWidgetStore.save).
@@ -135,6 +135,7 @@ struct LayaProvider: TimelineProvider {
         switch face(context.family) {
         case .media(let band): faceImage = WidgetArt.media(cover: art, size: size, band: band, scale: scale)
         case .body: faceImage = WidgetArt.body(cover: art, size: size, scale: scale)
+        case .poster: faceImage = WidgetArt.poster(cover: art)
         }
         let tiles = wantsTiles && images ? s.liked.map { image($0.art, maxPx: 240) } : []
         return LayaEntry(snapshot: s, size: size, face: faceImage, art: art, tiles: tiles)
