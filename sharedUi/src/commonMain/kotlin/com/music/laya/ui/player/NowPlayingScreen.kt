@@ -1568,10 +1568,10 @@ fun NowPlayingScreen(
             videoToggle = videoToggle,
         )
         // Keep the current output caption visible in every state.
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(PlayerPlatform.host.outputCaptionGap))
         Box(
             modifier = Modifier.fillMaxWidth().height(20.dp),
-            contentAlignment = Alignment.TopCenter,
+            contentAlignment = PlayerPlatform.host.outputCaptionAlignment,
         ) {
             OutputCaption(
                 accountName = accountName,
@@ -3911,7 +3911,7 @@ fun NowPlayingScreen(
                     Spacer(Modifier.height(6.dp))
 
                     playerActions()
-                    Spacer(Modifier.height(18.dp))
+                    Spacer(Modifier.height(PlayerPlatform.host.portraitBottomPadding))
                     }
                     }
                     }

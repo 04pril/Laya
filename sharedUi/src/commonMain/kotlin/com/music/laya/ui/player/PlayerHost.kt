@@ -4,6 +4,9 @@ import com.music.laya.data.settings.VideoScale
 import kotlin.concurrent.Volatile
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
 import com.music.laya.data.canvas.CanvasArtwork
@@ -115,6 +118,12 @@ interface PlayerHost {
 
     @Composable
     fun RoutePickerOverlay(modifier: Modifier) {}
+
+    /** Space inside the safe area, after the portrait player's output caption. */
+    val portraitBottomPadding: Dp get() = 18.dp
+    /** Gap between the bottom action buttons and their output caption. */
+    val outputCaptionGap: Dp get() = 18.dp
+    val outputCaptionAlignment: Alignment get() = Alignment.TopCenter
 
     val hasNativeOutputGlyph: Boolean get() = false
 

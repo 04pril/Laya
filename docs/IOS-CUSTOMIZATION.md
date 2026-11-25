@@ -35,7 +35,7 @@ bash iosApp/scripts/test-native-customization.sh
 (cd WireGuard && go test ./...)
 ```
 
-IPA는 `build/Laya-1.9.6-custom40.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
+IPA는 `build/Laya-1.9.6-custom41.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
 
 자동 검사 범위: iOS Kotlin 컴파일, 앱/위젯 빌드, 설정 저장/범위 검증, 중복 항목 큐 삭제와 되돌리기 무효화, 한국어/영어 런타임 전환, 서명된 Mach-O의 App Group 읽기, Go 프록시 엔진 테스트.
 
@@ -50,10 +50,10 @@ IPA는 `build/Laya-1.9.6-custom40.ipa`에 생성됩니다. 배포용 Apple 서�
 
 ## 독립 테스트 앱
 
-`layatest-1.9.6-custom40.ipa`는 같은 수정본을 별도 앱으로 설치하는 변형입니다. 앱 식별자는 `com.music.layatest`, 위젯은 `com.music.layatest.widgets`, App Group은 `group.com.music.layatest`, URL 스킴은 `layatest`입니다. 기본 앱의 데이터 컨테이너와 Keychain 서비스, 프록시 비밀정보, 위젯 저장소·링크를 공유하지 않습니다. Laya와 동시에 설치할 수 있습니다.
+`layatest-1.9.6-custom41.ipa`는 같은 수정본을 별도 앱으로 설치하는 변형입니다. 앱 식별자는 `com.music.layatest`, 위젯은 `com.music.layatest.widgets`, App Group은 `group.com.music.layatest`, URL 스킴은 `layatest`입니다. 기본 앱의 데이터 컨테이너와 Keychain 서비스, 프록시 비밀정보, 위젯 저장소·링크를 공유하지 않습니다. Laya와 동시에 설치할 수 있습니다.
 
 ```sh
-python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom40.ipa build/layatest-1.9.6-custom40.ipa
+python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom41.ipa build/layatest-1.9.6-custom41.ipa
 ```
 
 ## 빌드 40 · 화면과 위젯 보완
@@ -64,3 +64,9 @@ python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom40.ipa build/laya
 - 잠금화면·다이나믹 아일랜드의 시스템 나우플레잉에 빗코드의 실행 대상 연결 보완을 이식했습니다. `Info.plist`의 실제 설치 식별자를 사용하므로 Laya·layatest 및 재서명 식별자를 구분합니다. 선택적 MediaRemote API 부재·예외가 재생에 영향을 주지 않도록 처리했습니다. 탭으로 앱 열기는 실기기와 최종 서명 상태에서 확인이 필요합니다.
 - 임의로 만들었던 컬러 위젯을 빗코드 `App/Shared/PosterWidgetViews.swift`의 WidgetPod 스타일 4×2·2×2로 교체했습니다. 338×158/158×158 기준 배치, 곡선 앨범아트, 원본 `WidgetMusicGlyph` 자산과 Liquid Artwork 필터값을 가져왔습니다. 기존 위젯 종류 식별자를 유지하며 Laya 재생 명령과 독립 앱 저장소를 연결합니다.
 - 검증: iOS Kotlin 컴파일, 설정 이전 및 가사 폰트 회귀 검사, 네이티브 언어·서명 그룹 검사, 세 가지 앱 식별자의 나우플레잉 연결과 API 부재·예외 격리 검사. UI와 실제 잠금화면 탭 동작은 로컬 Simulator 런타임 부재로 실기기 확인이 필요합니다.
+
+## 빌드 41 · 플레이어 하단 기준 맞춤
+
+- 빗코드의 세로 플레이어와 동일하게 안전 영역 아래쪽 추가 여백을 18dp에서 4dp로, 하단 버튼과 출력 기기 이름 사이를 18dp에서 12dp로 조정했습니다. 출력 이름도 20dp 슬롯의 위쪽 대신 중앙에 정렬합니다. 제목·재생 컨트롤·하단 버튼이 과하게 올라가 보이던 배치를 낮추되 시스템 안전 영역은 유지합니다. 플랫폼 호스트의 레이아웃 값으로 구분합니다.
+- AirPods 이어버드 출력 아이콘만 1.18배 확대했습니다. 헤드폰/AirPods Max 아이콘과 48dp 출력 선택 터치 영역은 유지합니다. 투명 PNG를 Compose 안에서 그리는 기존 경로도 유지합니다.
+- 검증: iOS Kotlin 컴파일, iPhone Release 앱·위젯 빌드와 서명 검사, 일반/독립 테스트 IPA 식별자·App Group·체크섬 검사. 화면 위치의 최종 비교는 실기기 확인이 필요합니다.

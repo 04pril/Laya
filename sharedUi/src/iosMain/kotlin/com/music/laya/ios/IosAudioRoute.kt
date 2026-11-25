@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -180,8 +181,13 @@ internal fun IosOutputGlyph(modifier: Modifier) {
         }.getOrNull()
     }
     if (bitmap != null) {
+        // Earbud symbols are wider than they are tall: fitting them into the
+        // same square as headphones made them optically too small. Enlarge
+        // only the earbud glyph, retaining the route picker's 48dp tap target.
+        val scale = if (symbol.startsWith("airpods") && symbol != "airpods.max") 1.18f else 1f
         androidx.compose.foundation.Image(bitmap = bitmap, contentDescription = null,
-            contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = modifier)
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit,
+            modifier = modifier.graphicsLayer { scaleX = scale; scaleY = scale })
     } else {
         androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Headphones,
             contentDescription = null, tint = Color.White, modifier = modifier)

@@ -4,6 +4,8 @@ import com.music.laya.data.settings.VideoScale
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import com.music.laya.data.canvas.CanvasArtwork
 import com.music.laya.data.canvas.CanvasRepository
 import com.music.laya.data.lyrics.LyricLine
@@ -62,6 +64,10 @@ internal object IosAppUiHost : AppUiHost {
 internal object IosPlayerHost : PlayerHost {
     override val settings: PlayerSettingsSource = IosPlayerSettings
 
+    // Match BitChord's safe-area + 4pt bottom edge and 12pt caption gap.
+    override val portraitBottomPadding = 4.dp
+    override val outputCaptionGap = 12.dp
+    override val outputCaptionAlignment = Alignment.Center
     override val hasNativeOutputGlyph = true
 
     @Composable
