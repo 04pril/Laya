@@ -681,12 +681,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 onSuccess = {
                     // Liked Music is now out of date either way.
                     libraryStale = true
+                    if (status == LikeStatus.LIKE) {
+                        YtMusicRepository.trackLinks(videoId).getOrNull()?.let(likedDownloads::liked)
+                    }
                     if (status != LikeStatus.LIKE) dropFromLikedLists(videoId)
-                    // Clearing the heart means forgetting the song, not
-                    // demoting it — see [forgetFromLibrary].
-                    val unliked = previous == LikeStatus.LIKE &&
-                        status == LikeStatus.INDIFFERENT
-                    if (unliked) forgetFromLibrary(videoId)
+
                 },
                 onFailure = {
                     LikeState.set(videoId, previous)
@@ -695,21 +694,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /**
-     * Takes an un-liked track out of the library as well, and reports whether
-     * it did.
-     *
-     * Liking and saving are two independent flags on YouTube's side, and
-     * clearing only the first leaves the song saved — still feeding the
-     * Library tab's Artists shelf, still in the library feeds, with nowhere
-     * left in this app to reach it and finish the job. Clearing the heart
-     * reads as "forget this song", so it clears both.
-     *
-     * The token is fetched here rather than taken from [songMenu] because the
-     * heart in the player never opens a menu, so there is often nothing
-     * cached to take. One extra request, on an action nobody performs in bulk.
-     * A song that was never saved has no removal token and this is a no-op.
-     */
+    fun removeSongFromLibrary(videoId: String) {
+        if (!requireSignIn()) return
+        viewModelScope.launch {
+            if (forgetFromLibrary(videoId)) { libraryStale = true; loadLibrary() }
+        }
+    }
+
     private suspend fun forgetFromLibrary(videoId: String): Boolean {
         val menu = YtMusicRepository.songMenu(videoId).getOrNull() ?: return false
         val token = menu.removeFromLibraryToken?.takeIf { menu.inLibrary } ?: return false
@@ -1428,7 +1419,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (_library.value is UiState.Success) refresh(Feed.LIBRARY)
     }
 
+    private val likedDownloads = com.music.laya.download.LikedDownloads(getApplication(), signedIn) {
+        _activeAccountId.value?.let { "$it:${_activeProfileId.value}" }
+    }
+
     init {
+        likedDownloads.install(viewModelScope, combine(activeAccountId, activeProfileId) { account, profile -> account?.let { "$it:$profile" } })
         // The library widget's liked row follows the account: its first few
         // Liked Music tracks while signed in, nothing once signed out.
         viewModelScope.launch {

@@ -1,6 +1,16 @@
 package com.music.laya.auth
 
 import android.annotation.SuppressLint
+import android.webkit.HttpAuthHandler
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceError
+import android.webkit.WebResourceResponse
+import androidx.compose.runtime.produceState
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalContext
+import com.music.laya.proxy.AppWireGuard
+import com.music.laya.data.Http
+import com.music.laya.data.AppProxyKind
 import android.webkit.CookieManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -73,6 +83,7 @@ fun YtMusicLoginScreen(
     /** For a host that needs the WebView set up differently — the TV app, for its remote. */
     configureWebView: (WebView) -> Unit = {},
 ) {
+    var loginProxyError by remember { mutableStateOf<String?>(null) }
     var webView by remember { mutableStateOf<WebView?>(null) }
     val currentOnCaptured by rememberUpdatedState(onCaptured)
     val currentOnUnavailable by rememberUpdatedState(onCaptureUnavailable)
@@ -85,6 +96,20 @@ fun YtMusicLoginScreen(
         else captureFrom(view, currentOnCaptured, currentOnUnavailable)
     }
 
+    // Android WebView has a separate transport; never load Google login through
+    // a direct connection if the configured app-local proxy could not be applied.
+    val context = LocalContext.current
+    val webProxyReady by produceState<Boolean?>(initialValue = null) {
+        value = com.music.laya.proxy.AppProxyWebView.prepare(context)
+    }
+    if (webProxyReady != true || loginProxyError != null) {
+        Text(
+            loginProxyError
+                ?: if (webProxyReady == null) com.music.laya.ui.androidText("로그인 브라우저 연결을 준비하는 중…", "Preparing login browser connection…")
+                else com.music.laya.ui.androidText("브라우저 프록시를 적용하지 못했습니다. Android System WebView를 업데이트하고 연결 설정 적용 후 Laya를 다시 열어 주세요.", "Browser proxy unavailable. Update Android System WebView, apply connection settings and reopen Laya."),
+        )
+        return
+    }
     AndroidView(
         modifier = modifier.fillMaxSize(),
         factory = { context ->
@@ -102,6 +127,51 @@ fun YtMusicLoginScreen(
                 configureWebView(this)
 
                 webViewClient = object : WebViewClient() {
+                    override fun onReceivedHttpAuthRequest(
+                        view: WebView?,
+                        handler: HttpAuthHandler?,
+                        host: String?,
+                        realm: String?,
+                    ) {
+                        // Never give native loopback credentials to Google or
+                        // to another origin. Some WebView providers do not
+                        // forward HTTP proxy (407) challenges here; in that
+                        // case login fails closed rather than silently bypassing.
+                        val allowed = AppWireGuard.credentialForWebView(host, realm)
+                        if (allowed != null && handler != null) {
+                            handler.proceed(allowed.first, allowed.second)
+                        } else {
+                            handler?.cancel()
+                        }
+                    }
+
+                    override fun onReceivedError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        error: WebResourceError?,
+                    ) {
+                        if (Http.configuredRoute.kind == AppProxyKind.WIREGUARD_LOCAL &&
+                            (error?.errorCode == ERROR_PROXY_AUTHENTICATION ||
+                             error?.errorCode == ERROR_CONNECT)
+                        ) {
+                            loginProxyError = "WireGuard login browser proxy failed. No direct fallback."
+                            currentOnPageReady(false)
+                        }
+                    }
+
+                    override fun onReceivedHttpError(
+                        view: WebView?,
+                        request: WebResourceRequest?,
+                        errorResponse: WebResourceResponse?,
+                    ) {
+                        if (Http.configuredRoute.kind == AppProxyKind.WIREGUARD_LOCAL &&
+                            errorResponse?.statusCode == 407
+                        ) {
+                            loginProxyError = "WireGuard proxy rejected login browser authentication."
+                            currentOnPageReady(false)
+                        }
+                    }
+
                     override fun onPageFinished(view: WebView?, url: String?) {
                         // Reaching the Music origin only enables confirmation.
                         // A multi-channel login can still be waiting for the

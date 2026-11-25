@@ -122,6 +122,8 @@ fun HomeScreen(
     title: String?,
     signedIn: Boolean = true,
     onSignIn: (() -> Unit)? = null,
+    onProxy: (() -> Unit)? = null,
+    proxyLabel: String = "Proxy settings",
     /**
      * Holding a card rather than tapping it. Every card on the feed answers,
      * whichever kind it is: the caller reads the item the same way it does for
@@ -169,7 +171,7 @@ fun HomeScreen(
             }
             if (!signedIn && onSignIn != null) {
                 item {
-                    SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp))
+                    SignInBanner(onSignIn = onSignIn, modifier = Modifier.padding(bottom = 8.dp), onProxy = onProxy, proxyLabel = proxyLabel)
                 }
             }
             when (state) {

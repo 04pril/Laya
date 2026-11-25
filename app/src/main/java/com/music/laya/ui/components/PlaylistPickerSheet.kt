@@ -93,6 +93,8 @@ fun PlaylistPickerSheet(
     song: Song? = null,
     startCreating: Boolean = false,
 ) {
+    var query by remember { mutableStateOf("") }
+    val visiblePlaylists = remember(playlists, query) { playlists.filter { it.title.contains(query.trim(), ignoreCase = true) } }
     var creating by remember { mutableStateOf(startCreating) }
     // By id rather than by value: the list is re-fetched under an open sheet,
     // and a refreshed row must stay ticked.
@@ -125,6 +127,9 @@ fun PlaylistPickerSheet(
             onClick = { creating = true },
         )
 
+        androidx.compose.material3.OutlinedTextField(query, { query = it },
+            label = { Text(stringResource(R.string.search)) }, singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp))
         when {
             // Only while there is nothing to show: re-fetching under a list
             // that is already up would replace it with a spinner for no gain.
@@ -156,7 +161,7 @@ fun PlaylistPickerSheet(
                 // Capped so a long list can't push the sheet past the screen;
                 // it scrolls inside the sheet instead.
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
-                    items(playlists, key = { it.playlistId }) { playlist ->
+                    items(visiblePlaylists, key = { it.playlistId }) { playlist ->
                         val ticked = playlist.playlistId in selected
                         PlaylistRow(
                             playlist = playlist,

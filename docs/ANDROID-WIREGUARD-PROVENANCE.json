@@ -1,0 +1,13 @@
+{
+  "repository": "https://github.com/seo-rii/morphe-patches",
+  "commit": "d03b7439f517eeed13d12edc1f922ee0e640cd13",
+  "source": "native/wireguard",
+  "go": "1.26.10",
+  "ndk": "28.2.13676358",
+  "minSdk": 26,
+  "license": "GPL-3.0-only",
+  "sha256": {
+    "arm64-v8a": "bc775df59f41d48a59211993a5100ab6d9efaf801f9ca45caddc963f124cae4c",
+    "x86_64": "42f1b4fa6040e18053e221a25aadbc5d797e1ed73608b672ff2532c20a6518c8"
+  }
+}

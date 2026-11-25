@@ -3338,6 +3338,11 @@ class PlaybackService : MediaLibraryService() {
         refreshCustomLayouts()
         favoriteActionJob = scope.launch {
             YtMusicRepository.rate(videoId, target)
+                .onSuccess {
+                    if (target == LikeStatus.LIKE && com.music.laya.data.settings.IosCustomization.downloadLikes.value && AppSettings.downloadsAllowedNow) {
+                        YtMusicRepository.trackLinks(videoId).getOrNull()?.let { Downloads.enqueue(this@PlaybackService, it) }
+                    }
+                }
                 .onFailure {
                     LikeState.set(videoId, previous)
                     refreshCustomLayouts()
@@ -3542,7 +3547,7 @@ class PlaybackService : MediaLibraryService() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             // On TV this is the home screen's Now Playing card, which has to land
             // on playback controls (TV app quality, TV-NP), not on Home.
-            .apply { if (isTv) putExtra(PlayerDeepLink.EXTRA_OPEN_PLAYER, true) },
+            .putExtra(PlayerDeepLink.EXTRA_OPEN_PLAYER, true),
         PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
     )
 
@@ -7584,6 +7589,7 @@ class PlaybackService : MediaLibraryService() {
 
 
     override fun onDestroy() {
+        CarConnectionState.connected.value = false
         AudioCache.onPinned = null
         WearBridge.attachStreams(null)
         WearBridge.releaseSpeaker()
@@ -8302,12 +8308,16 @@ class PlaybackService : MediaLibraryService() {
         override fun onPostConnect(session: MediaSession, controller: MediaSession.ControllerInfo) {
             if (session.isAutoCompanionController(controller) || session.isAutomotiveController(controller)) {
                 carControllers += controller
+                CarConnectionState.connected.value = true
                 refreshCustomLayouts()
             }
         }
 
         override fun onDisconnected(session: MediaSession, controller: MediaSession.ControllerInfo) {
-            if (carControllers.remove(controller)) refreshCustomLayouts()
+            if (carControllers.remove(controller)) {
+                CarConnectionState.connected.value = carControllers.isNotEmpty()
+                refreshCustomLayouts()
+            }
         }
 
         override fun onCustomCommand(

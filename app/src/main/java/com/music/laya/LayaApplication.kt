@@ -60,6 +60,10 @@ class LayaApplication : Application(), SingletonImageLoader.Factory {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        if (com.music.laya.proxy.AppProxyRelaunchActivity.isRelaunchProcess(this)) return
+        val selectedRoute = com.music.laya.proxy.AppProxyStore.read(this)
+        val route = com.music.laya.proxy.AppWireGuard.startAtProcessLaunch(this, selectedRoute)
+        com.music.laya.data.Http.configureAtStartup(route.route, route.proxyAuthorization)
         com.music.laya.ui.theme.SFProDisplay = androidx.compose.ui.text.font.FontFamily(
             androidx.compose.ui.text.font.Font(R.font.sf_pro_display_regular, androidx.compose.ui.text.font.FontWeight.W400),
             androidx.compose.ui.text.font.Font(R.font.sf_pro_display_medium, androidx.compose.ui.text.font.FontWeight.W500),
@@ -108,6 +112,11 @@ class LayaApplication : Application(), SingletonImageLoader.Factory {
         // Full tag (zh-Hant / zh-Hans preserved); Innertube maps to hl/gl.
         Innertube.appLanguage = { AppCompatDelegate.getApplicationLocales().get(0)?.toLanguageTag() }
         migrateScriptOnlyAppLocale()
+        val selectedLanguage = AppCompatDelegate.getApplicationLocales().get(0)?.language
+        if (selectedLanguage !in setOf("ko", "en")) {
+            val language = if (java.util.Locale.getDefault().language == "ko") "ko" else "en"
+            AppCompatDelegate.setApplicationLocales(androidx.core.os.LocaleListCompat.forLanguageTags(language))
+        }
         registerShortcuts()
         LyricsTranslation.cacheDir = cacheDir.toOkioPath()
         // PlaybackService shares this process, so seeding the cookie here means
@@ -243,7 +252,7 @@ class LayaApplication : Application(), SingletonImageLoader.Factory {
      * identifying agent. Anything else falls through to Coil's own fetchers.
      */
     private val coilHttpClient: OkHttpClient by lazy {
-        OkHttpClient.Builder()
+        com.music.laya.data.Http.client.newBuilder()
             .addInterceptor { chain ->
                 chain.proceed(
                     chain.request().newBuilder()

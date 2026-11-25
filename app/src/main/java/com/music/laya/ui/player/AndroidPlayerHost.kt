@@ -10,8 +10,11 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.material.icons.rounded.Earbuds
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.music.laya.data.canvas.CanvasArtwork
@@ -93,6 +96,27 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
 
     @Composable
     override fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = AndroidCanvasVideo(spec, modifier)
+
+    @Composable
+    override fun QueueSelectionActions(queue: List<Song>, currentIndex: Int, locked: Boolean) = AndroidQueueSelection(queue, currentIndex, locked)
+
+    override val hasNativeOutputGlyph get() = true
+    @Composable
+    override fun OutputGlyph(modifier: Modifier) {
+        val name = rememberAudioOutputs().firstOrNull { it.isActive }?.name.orEmpty().lowercase()
+        val glyph = when {
+            ("airpods" in name || "에어팟" in name) && ("max" in name || "맥스" in name) -> androidx.compose.material.icons.Icons.Rounded.Headphones
+            "airpods" in name || "에어팟" in name -> androidx.compose.material.icons.Icons.Rounded.Earbuds
+            else -> androidx.compose.material.icons.Icons.Rounded.Headphones
+        }
+        androidx.compose.material3.Icon(glyph, null, modifier, tint = androidx.compose.ui.graphics.Color.White)
+    }
+
+    override val supportsExpandedPlayerLayout: Boolean get() = true
+    override val portraitBottomPadding get() = 4.dp
+    override val outputCaptionGap get() = 8.dp
+    override val prominentOutputCaption get() = true
+    override val outputCaptionAlignment get() = androidx.compose.ui.Alignment.Center
 
     override val musicVideoSupported: Boolean get() = true
 

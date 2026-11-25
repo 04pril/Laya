@@ -1,0 +1,26 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+  <string name="fourpril_ignore_update_notifications">업데이트 알림 무시</string>
+  <string name="fourpril_ignore_update_notifications_subtitle">업데이트 팝업과 상단 업데이트 아이콘을 숨깁니다.</string>
+  <string name="fourpril_open_full_player_on_tap">노래 선택 시 전체 플레이어 열기</string>
+  <string name="fourpril_open_full_player_on_tap_subtitle">끄면 미니플레이어에서 시작, 켜면 전체 플레이어를 바로 엽니다.</string>
+  <string name="fourpril_onboarding_proxy_title">WireGuard 설정</string>
+  <string name="fourpril_onboarding_proxy_intro">음악 재생과 Google 로그인에 사용할 WireGuard .conf 파일을 선택해 주세요.</string>
+  <string name="fourpril_onboarding_proxy_setup">WireGuard / 프록시 먼저 설정</string>
+  <string name="fourpril_onboarding_proxy_restart_hint">가져오기가 완료되면 ‘알겠습니다’를 누르고 다시 시작해요.</string>
+  <string name="fourpril_home_proxy_button">프록시</string>
+  <string name="fourpril_proxy_restart_title">WireGuard 설정 완료</string>
+  <string name="fourpril_proxy_restart_message">프록시 적용을 위해 앱을 재시작합니다.</string>
+  <string name="fourpril_proxy_restart_confirm">알겠습니다</string>
+  <string name="fourpril_proxy_settings_title">프록시 설정</string>
+  <string name="fourpril_proxy_off">꺼짐</string>
+  <string name="fourpril_proxy_wireguard">WireGuard 프록시 사용</string>
+  <string name="fourpril_proxy_apply_button">적용</string>
+  <string name="fourpril_pick_conf_button">WireGuard .conf 파일 찾기</string>
+  <string name="fourpril_conf_saved">WireGuard .conf 저장됨</string>
+  <string name="fourpril_conf_missing">WireGuard .conf 파일을 등록해 주세요.</string>
+  <string name="fourpril_conf_extension_error">.conf 파일만 선택할 수 있습니다.</string>
+  <string name="fourpril_conf_import_error">설정 파일을 가져오지 못했습니다.</string>
+  <string name="fourpril_conf_importing">.conf 가져오는 중…</string>
+  <string name="fourpril_conf_engine_error">이 기기에서 WireGuard 엔진을 사용할 수 없습니다.</string>
+</resources>
