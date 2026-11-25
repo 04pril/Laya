@@ -79,6 +79,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
@@ -89,6 +90,7 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -171,6 +173,7 @@ fun SettingsScreen(
     onAppLanguage: (() -> Unit)? = null,
     onEditSignatureApi: (() -> Unit)? = null,
     customization: (@Composable () -> Unit)? = null,
+    onPlayerPreferences: (() -> Unit)? = null,
 ) {
     val host = SettingsExtras.host
     val engineOptions = host.hasEngineOptions
@@ -321,6 +324,16 @@ fun SettingsScreen(
         )
 
         if (searchQuery.isBlank()) customization?.invoke()
+        if (onPlayerPreferences != null) {
+            val title = stringResource(Res.string.player_preferences)
+            val subtitle = stringResource(Res.string.android_player_preferences_subtitle)
+            SearchableSettingsGroup(search, header = stringResource(Res.string.player_customization_group)) {
+                row(title, subtitle, stringResource(Res.string.blur_unfocused_lyrics),
+                    "프록시", "proxy", "WireGuard", "font", "가사", "lyrics", "좋아요", "Android Auto") {
+                    SettingsRow(title = title, subtitle = subtitle, onClick = onPlayerPreferences)
+                }
+            }
+        }
         SearchableSettingsGroup(search) {
             if (onAccountScrobbling != null) {
                 val accountTitle = stringResource(Res.string.account_integrations)
@@ -1029,7 +1042,7 @@ fun SettingsScreen(
             // connection — which is the part worth being able to narrow.
             if (syncedLyrics) {
                 val lyricsBlurTitle = stringResource(Res.string.blur_unfocused_lyrics)
-                row(lyricsBlurTitle, "lyrics", "blur") {
+                row(lyricsBlurTitle, "lyrics", "blur", available = onPlayerPreferences == null) {
                     SettingsRow(
                         icon = Icons.Rounded.BlurOn,
                         title = lyricsBlurTitle,
@@ -2228,7 +2241,9 @@ fun SettingsGroup(
             .clip(GroupShape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        content()
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurfaceVariant) {
+            content()
+        }
     }
     if (footer != null) {
         Text(

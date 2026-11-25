@@ -1,6 +1,8 @@
 package com.music.laya.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -13,6 +15,7 @@ import com.music.laya.ui.screens.RowDivider
 import com.music.laya.data.settings.AppSettings
 import com.music.laya.data.settings.IosCustomization as Prefs
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlin.math.roundToInt
 
 @Composable
 internal fun androidText(ko: String, en: String): String {
@@ -21,7 +24,13 @@ internal fun androidText(ko: String, en: String): String {
 }
 
 @Composable
-fun AndroidCustomizationSettings() {
+internal fun AndroidCustomizationSettings(contentPadding: PaddingValues) {
+    val pendingFontValues = remember { mutableStateMapOf<String, Int>() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val storagePermission = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
+    ) { granted -> if (granted) Prefs.set("download_likes", Prefs.downloadLikes, true) }
+
     @Composable fun switch(checked: Boolean, onChange: (Boolean) -> Unit) {
         Switch(checked, onChange, colors = SwitchDefaults.colors(
             checkedTrackColor = MaterialTheme.colorScheme.primary,
@@ -30,10 +39,6 @@ fun AndroidCustomizationSettings() {
     }
     @Composable fun toggle(ko: String, en: String, key: String, flow: MutableStateFlow<Boolean>) {
         val checked by flow.collectAsState()
-        val context = androidx.compose.ui.platform.LocalContext.current
-        val storagePermission = androidx.activity.compose.rememberLauncherForActivityResult(
-            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-        ) { granted -> if (granted) Prefs.set(key, flow, true) }
         val change: (Boolean) -> Unit = { enabled ->
             if (key == "download_likes" && enabled && com.music.laya.download.DownloadStore.needsLegacyPermission() &&
                 androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.WRITE_EXTERNAL_STORAGE) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
@@ -42,19 +47,33 @@ fun AndroidCustomizationSettings() {
         }
         SettingsRow(title = androidText(ko, en), onClick = { change(!checked) }, trailing = { switch(checked, change) })
     }
+    @Composable fun fontValue(key: String, preference: MutableStateFlow<Int>): Int {
+        val saved by preference.collectAsState()
+        return pendingFontValues[key] ?: saved
+    }
+    @Composable fun fontSlider(label: String, key: String, preference: MutableStateFlow<Int>, range: IntRange, step: Int) {
+        val value = fontValue(key, preference)
+        Text("$label · $value", style = MaterialTheme.typography.bodyLarge)
+        Slider(
+            value = value.toFloat(),
+            onValueChange = { pendingFontValues[key] = (it / step).roundToInt() * step },
+            onValueChangeFinished = {
+                pendingFontValues[key]?.let { Prefs.set(key, preference, it) }
+                pendingFontValues.remove(key)
+            },
+            valueRange = range.first.toFloat()..range.last.toFloat(),
+            steps = (range.last - range.first) / step - 1,
+        )
+    }
     @Composable fun font(ko: String, en: String, sizeKey: String, size: MutableStateFlow<Int>, weightKey: String, weight: MutableStateFlow<Int>) {
-        val s by size.collectAsState(); val w by weight.collectAsState()
         SettingsGroup(header = androidText(ko, en)) {
             Column(Modifier.padding(horizontal = 24.dp, vertical = 16.dp)) {
-                Text(androidText("크기", "Size") + " · $s", style = MaterialTheme.typography.bodyLarge)
-                Slider(s.toFloat(), { Prefs.set(sizeKey, size, it.toInt()) }, valueRange = 18f..52f, steps = 33)
-                Text(androidText("굵기", "Weight") + " · $w", style = MaterialTheme.typography.bodyLarge)
-                Slider(w.toFloat(), { Prefs.set(weightKey, weight, ((it / 100).toInt() * 100).coerceIn(100, 900)) }, valueRange = 100f..900f, steps = 7)
+                fontSlider(androidText("크기", "Size"), sizeKey, size, 18..52, step = 1)
+                fontSlider(androidText("굵기", "Weight"), weightKey, weight, 100..900, step = 100)
             }
         }
     }
-    Column(Modifier.fillMaxWidth()) {
-        val context = androidx.compose.ui.platform.LocalContext.current
+    Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(contentPadding).padding(bottom = 24.dp)) {
         SettingsGroup(header = androidText("연결", "Connection")) {
             SettingsRow(title = androidText("WireGuard / 프록시 설정", "WireGuard / proxy settings"), onClick = {
                 context.startActivity(android.content.Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java))
@@ -89,10 +108,10 @@ fun AndroidCustomizationSettings() {
             font("영문 및 기타 언어", "Latin & other languages", "latin_size", Prefs.latinSize, "latin_weight", Prefs.latinWeight)
         } else font("전체 가사", "All lyrics", "font_size", Prefs.fontSize, "font_weight", Prefs.fontWeight)
         SettingsGroup(header = androidText("미리보기", "Preview")) {
-            val ks by (if (separate) Prefs.koreanSize else Prefs.fontSize).collectAsState()
-            val kw by (if (separate) Prefs.koreanWeight else Prefs.fontWeight).collectAsState()
-            val ls by (if (separate) Prefs.latinSize else Prefs.fontSize).collectAsState()
-            val lw by (if (separate) Prefs.latinWeight else Prefs.fontWeight).collectAsState()
+            val ks = if (separate) fontValue("korean_size", Prefs.koreanSize) else fontValue("font_size", Prefs.fontSize)
+            val kw = if (separate) fontValue("korean_weight", Prefs.koreanWeight) else fontValue("font_weight", Prefs.fontWeight)
+            val ls = if (separate) fontValue("latin_size", Prefs.latinSize) else ks
+            val lw = if (separate) fontValue("latin_weight", Prefs.latinWeight) else kw
             Column(Modifier.padding(24.dp)) {
                 Text("지금 이 순간을 기억해", fontSize = ks.sp, fontWeight = FontWeight(kw), lineHeight = (ks * 1.24f).sp)
                 Spacer(Modifier.height(12.dp))

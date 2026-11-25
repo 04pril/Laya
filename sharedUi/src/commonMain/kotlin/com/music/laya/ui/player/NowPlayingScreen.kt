@@ -3876,63 +3876,58 @@ fun NowPlayingScreen(
                         )
                     }
                     val transitionWindow by PlayerSettings.smartTransitionWindow.collectAsStateWithLifecycle()
-                    PlayerScrubber(
-                        shown = shown,
-                        durationMs = durationMs,
-                        loading = versionSwitching,
-                        mixing = mixing && !scrub.scrubbing,
-                        // Hidden while scrubbing: the planner is still describing
-                        // where the transition *would* be, and a marker sitting under
-                        // a finger that is moving the playhead invites reading it as
-                        // a drag target.
-                        transitionWindow = transitionWindow
-                            ?.takeIf { !scrub.scrubbing && it.end > it.start }
-                            ?.let { it.start..it.end },
-                        onScrub = onScrub,
-                        onScrubFinished = onScrubFinished,
-                    ) {
-                        PlaybackQualityLabel(
-                            song = song,
-                            isLoading = isLoading,
-                            modifier = Modifier
-                                .align(Alignment.Center)
-                                .padding(horizontal = 8.dp),
-                        )
-                    }
-
-                    // The transport rides midway between the two blocks it separates:
-                    // the scrubber above it, and the volume bar and toggle row below,
-                    // which sit close enough together to read as one. Both of its own
-                    // gaps take half the spread, so on a tall screen it holds the
-                    // centre rather than drifting up under the seek bar.
-                    Spacer(Modifier.height(8.dp + controlSpread / 2))
-
-                    TransportRow(
-                        isPlaying = isPlaying,
-                        isLoading = isLoading || audioVersionSwitching,
-                        previousEnabled = !controlsLocked &&
-                            (hasPrevious || pastRestartPoint),
-                        nextEnabled = !controlsLocked && hasNext,
-                        onPrevious = onPrevious,
-                        onPlayPause = onPlayPause,
-                        onNext = onNext,
+                    PortraitPlaybackControls(
+                        gap = 20.dp + controlSpread,
+                        scrubber = {
+                            PlayerScrubber(
+                                shown = shown,
+                                durationMs = durationMs,
+                                loading = versionSwitching,
+                                mixing = mixing && !scrub.scrubbing,
+                                // Hidden while scrubbing: the planner is still describing
+                                // where the transition *would* be, and a marker sitting under
+                                // a finger that is moving the playhead invites reading it as
+                                // a drag target.
+                                transitionWindow = transitionWindow
+                                    ?.takeIf { !scrub.scrubbing && it.end > it.start }
+                                    ?.let { it.start..it.end },
+                                onScrub = onScrub,
+                                onScrubFinished = onScrubFinished,
+                            ) {
+                                PlaybackQualityLabel(
+                                    song = song,
+                                    isLoading = isLoading,
+                                    modifier = Modifier
+                                        .align(Alignment.Center)
+                                        .padding(horizontal = 8.dp),
+                                )
+                            }
+                        },
+                        transport = {
+                            TransportRow(
+                                isPlaying = isPlaying,
+                                isLoading = isLoading || audioVersionSwitching,
+                                previousEnabled = !controlsLocked &&
+                                    (hasPrevious || pastRestartPoint),
+                                nextEnabled = !controlsLocked && hasNext,
+                                onPrevious = onPrevious,
+                                onPlayPause = onPlayPause,
+                                onNext = onNext,
+                                portraitPhone = true,
+                            )
+                        },
+                        volume = {
+                            if (!hideVolumeBar) {
+                                VolumeRow(
+                                    value = { volume.level.value },
+                                    onValueChange = onVolumeChange,
+                                    onValueChangeFinished = onVolumeChangeFinished,
+                                )
+                            } else {
+                                Spacer(Modifier.height(VOLUME_ROW_HEIGHT))
+                            }
+                        },
                     )
-
-                    // Keep the volume slot's full footprint when its contents are
-                    // hidden. Removing the slot itself shortened the controls by 50dp
-                    // and moved every control below it. A display preference should not
-                    // change the half-player's geometry.
-                    Spacer(Modifier.height(12.dp + controlSpread / 2))
-
-                    if (!hideVolumeBar) {
-                        VolumeRow(
-                            value = { volume.level.value },
-                            onValueChange = onVolumeChange,
-                            onValueChangeFinished = onVolumeChangeFinished,
-                        )
-                    } else {
-                        Spacer(Modifier.height(VOLUME_ROW_HEIGHT))
-                    }
 
                     // The volume slider already has 13dp below its drawn track.
                     // Balance that invisible inset with the caption gap below the icons.

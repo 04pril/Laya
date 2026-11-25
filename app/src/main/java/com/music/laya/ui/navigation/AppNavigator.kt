@@ -15,6 +15,7 @@ import com.music.laya.data.model.HomeShelf
  */
 sealed interface AppRoute {
     data object Settings : AppRoute
+    data object PlayerPreferences : AppRoute
     data object AccountScrobbling : AppRoute
     data object Sources : AppRoute
     data object ListenTogether : AppRoute

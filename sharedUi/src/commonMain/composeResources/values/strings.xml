@@ -279,6 +279,9 @@
     <string name="app_icon_liquid_glass" translatable="false">Liquid Glass</string>
     <string name="app_icon_liquid_glass_dark" translatable="false">Liquid Glass Dark</string>
     <string name="app_language">App language</string>
+    <string name="player_preferences">Player &amp; preferences</string>
+    <string name="android_player_preferences_subtitle">Lyrics, buttons, downloads and Android Auto</string>
+    <string name="player_customization_group">Customization</string>
     <string name="appearance">Appearance</string>
     <string name="artist_signatures">Artist signatures</string>
     <string name="artist_signatures_subtitle">Shows a handwritten signature when Apple Music has no title logo</string>

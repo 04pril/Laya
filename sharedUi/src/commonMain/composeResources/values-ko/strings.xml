@@ -293,6 +293,9 @@
     <string name="app_icon">앱 아이콘</string>
     <string name="app_icon_default">기본값</string>
     <string name="app_language">앱 언어</string>
+    <string name="player_preferences">플레이어 및 편의 설정</string>
+    <string name="android_player_preferences_subtitle">가사, 하단 버튼, 다운로드 및 Android Auto</string>
+    <string name="player_customization_group">사용자화</string>
     <string name="appearance">화면 설정</string>
     <string name="artist_signatures">아티스트 서명</string>
     <string name="artist_signatures_subtitle">Apple Music에 제목 로고가 없으면 손글씨 서명을 표시합니다</string>

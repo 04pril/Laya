@@ -265,6 +265,7 @@ import com.music.laya.ui.components.TopBarAccountButton
 import com.music.laya.ui.screens.SegmentedControl
 import com.music.laya.ui.components.SearchField
 import com.music.laya.sharedui.resources.Res as SharedRes
+import com.music.laya.sharedui.resources.player_preferences
 import com.music.laya.sharedui.resources.search_hint
 import com.music.laya.sharedui.resources.search_addons_hint
 import com.music.laya.sharedui.resources.search_library_hint
@@ -3042,6 +3043,8 @@ private fun LayaApp(
                                     .takeIf { com.music.laya.recognition.canOfferTile },
                                 onAddShortcut = { com.music.laya.recognition.offerTile(context) },
                             )
+                        } else if (pageRoute == AppRoute.PlayerPreferences) {
+                            com.music.laya.ui.AndroidCustomizationSettings(contentPadding = listPadding)
                         } else if (pageRoute == AppRoute.Settings) {
                             SettingsScreen(
                                 windowWidth = windowWidth,
@@ -3067,7 +3070,7 @@ private fun LayaApp(
                                 onSpotifyCanvasAuth = { showSpotifyCanvasAuth = true },
                                 onAppLanguage = { showAppLanguage = true },
                                 onEditSignatureApi = { editingSignatureApi = true },
-                                customization = { com.music.laya.ui.AndroidCustomizationSettings() },
+                                onPlayerPreferences = { navigator.push(AppRoute.PlayerPreferences) },
                                 contentPadding = listPadding,
                             )
                         } else if (page != null) {
@@ -3649,6 +3652,7 @@ private fun LayaApp(
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.Settings -> stringResource(R.string.settings)
+                        AppRoute.PlayerPreferences -> org.jetbrains.compose.resources.stringResource(SharedRes.string.player_preferences)
                         AppRoute.Replay -> stringResource(R.string.replay)
                         null -> when {
                             detail != null && detailActiveShelf != null -> detailActiveShelf?.title.orEmpty()

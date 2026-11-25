@@ -95,6 +95,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.HorizontalAlignmentLine
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -110,6 +113,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import com.music.laya.ui.haptics.Haptic
 import com.music.laya.ui.haptics.rememberHaptics
 import com.music.laya.ui.icons.LayaIcons
@@ -120,6 +124,8 @@ import com.music.laya.data.settings.TrackAnalysisState
 import com.music.laya.data.settings.AudioQuality
 import com.music.laya.data.model.Song
 import kotlin.math.roundToInt
+
+private val SeekTrackCenter = HorizontalAlignmentLine(::minOf)
 
 /**
  * How long the shuffle glyph ignores further taps after one lands.
@@ -224,6 +230,12 @@ internal fun PlayerScrubber(
             mixing = mixing,
             mixPulse = mixPulse,
             transitionWindow = transitionWindow,
+            modifier = Modifier.layout { measurable, constraints ->
+                val slider = measurable.measure(constraints)
+                layout(slider.width, slider.height, mapOf(SeekTrackCenter to slider.height / 2)) {
+                    slider.placeRelative(0, 0)
+                }
+            },
         )
         Box(
             modifier = Modifier
@@ -262,6 +274,40 @@ internal fun PlayerScrubber(
             if (mixingShown) {
                 MixingLabel(mixPulse, Modifier.align(Alignment.Center))
             }
+        }
+    }
+}
+
+/** Aligns the transport to the drawn tracks, including the space taken by the seek timestamps. */
+@Composable
+internal fun PortraitPlaybackControls(
+    gap: Dp,
+    scrubber: @Composable () -> Unit,
+    transport: @Composable () -> Unit,
+    volume: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Box { scrubber() }
+            Box { transport() }
+            Box { volume() }
+        },
+    ) { measurables, constraints ->
+        val rowConstraints = constraints.copy(minHeight = 0)
+        val seek = measurables[0].measure(rowConstraints)
+        val buttons = measurables[1].measure(rowConstraints)
+        val volumeRow = measurables[2].measure(rowConstraints)
+        val seekCenter = seek[SeekTrackCenter].takeUnless { it == AlignmentLine.Unspecified } ?: seek.height / 2
+        val seekInset = seek.height - seekCenter
+        val volumeInset = volumeRow.height / 2
+        val totalGap = gap.roundToPx().coerceAtLeast(abs(seekInset - volumeInset))
+        val above = (totalGap + volumeInset - seekInset) / 2
+        val rowsHeight = seek.height + buttons.height + volumeRow.height + totalGap
+        layout(constraints.maxWidth, rowsHeight.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+            seek.placeRelative(0, 0)
+            buttons.placeRelative(0, seek.height + above)
+            volumeRow.placeRelative(0, seek.height + buttons.height + totalGap)
         }
     }
 }
@@ -450,12 +496,17 @@ internal fun TransportRow(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     compact: Boolean = false,
+    portraitPhone: Boolean = false,
 ) {
-    val playSize = if (compact) 58.dp else 74.dp
+    val playSize = when {
+        compact -> 58.dp
+        portraitPhone -> 66.dp
+        else -> 74.dp
+    }
     val playTouch = if (compact) 76.dp else 92.dp
-    val skipSize = if (compact) 44.dp else PLAYER_SKIP_ICON_SIZE
+    val skipSize = if (compact || portraitPhone) 44.dp else PLAYER_SKIP_ICON_SIZE
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(if (portraitPhone) Modifier.padding(horizontal = 18.dp) else Modifier),
         // SpaceAround, not SpaceEvenly: the outer margins take half a gap, so
         // the three buttons spread a little further apart from each other.
         horizontalArrangement = Arrangement.SpaceAround,
@@ -478,7 +529,7 @@ internal fun TransportRow(
                 CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 3.dp,
-                    modifier = Modifier.size(if (compact) 30.dp else 38.dp),
+                    modifier = Modifier.size(if (compact || portraitPhone) 30.dp else 38.dp),
                 )
             }
         } else {
