@@ -90,8 +90,6 @@ internal fun IosCustomizationScreen(bottom: androidx.compose.ui.unit.Dp) {
             SettingsRow(title = iosText("WireGuard / 프록시 설정", "WireGuard / proxy settings"), onClick = { IosNative.host?.showProxy() })
         }
         SettingsGroup(header = iosText("플레이어", "Player")) {
-            toggle("간단한 하단 버튼 구성", "Simple player buttons", "simple_footer", Prefs.simpleFooter)
-            RowDivider()
             toggle("함께 듣기 버튼 숨기기", "Hide Listen Together button", "hide_party", Prefs.hideParty)
             RowDivider()
             toggle("비디오 버튼 숨기기", "Hide video button", "hide_video", Prefs.hideVideo)

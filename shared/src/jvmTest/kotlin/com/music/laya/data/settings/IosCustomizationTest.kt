@@ -8,7 +8,6 @@ class IosCustomizationTest {
         val store = MapSettings()
         IosCustomization.install(store, "ko")
         assertEquals("ko", IosCustomization.language.value)
-        assertTrue(IosCustomization.simpleFooter.value)
         assertTrue(IosCustomization.hideParty.value)
         assertTrue(IosCustomization.hideVideo.value)
         assertFalse(IosCustomization.downloadLikes.value)

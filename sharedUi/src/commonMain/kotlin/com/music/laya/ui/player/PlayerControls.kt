@@ -96,6 +96,7 @@ import org.jetbrains.compose.resources.painterResource
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -568,7 +569,7 @@ internal fun PlayerActionRow(
     onListenTogether: () -> Unit,
     /** Opens [ListenTogetherMembersSheet] rather than settings directly. */
     onOpenListenTogetherMembers: () -> Unit,
-    /** The audio/video switch beside Listen Together — see [OutputPartyPill]. */
+    /** The audio/video switch beside Listen Together — see [OutputActions]. */
     videoToggle: VideoToggle? = null,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -678,7 +679,7 @@ internal fun PlayerActionRow(
                         )
                     }
                 } else {
-                    OutputPartyPill(
+                    OutputActions(
                         onOutput = onOpenOutput,
                         onParty = onListenTogether,
                         onOpenMembers = onOpenListenTogetherMembers,
@@ -880,19 +881,11 @@ private fun PillDivider() {
 }
 
 /**
- * The two ends of "where is this playing": the output capsule.
- *
- * Both halves answer the same question and so belong to one control rather than
- * two glyphs that happen to sit side by side — headphones for which speaker the
- * sound leaves by, the party for which *people* it reaches.
- *
- * Video vs audio-only used to live here as a third segment; it now lives in
- * the player's own three-dot menu, beside Revert to original and Upgrade
- * quality — the same kind of choice, offered the same way. This capsule is
- * back to the two icons it always otherwise had, at their original spacing.
+ * Output selection, plus the optional Listen Together and video controls.
+ * Native route glyphs use bare buttons; the other hosts retain their capsule.
  */
 @Composable
-private fun OutputPartyPill(
+private fun OutputActions(
     onOutput: () -> Unit,
     onParty: () -> Unit,
     /** Who's in it, before the settings page — see [ListenTogetherMembersSheet]. */
@@ -900,14 +893,25 @@ private fun OutputPartyPill(
     videoToggle: VideoToggle? = null,
 ) {
     val badge = rememberPartyBadge()
-    val simple by com.music.laya.data.settings.IosCustomization.simpleFooter.collectAsStateWithLifecycle()
     val hideParty by com.music.laya.data.settings.IosCustomization.hideParty.collectAsStateWithLifecycle()
     val hideVideo by com.music.laya.data.settings.IosCustomization.hideVideo.collectAsStateWithLifecycle()
-    if (simple) {
+    if (PlayerPlatform.host.hasNativeOutputGlyph) {
+        val haptics = rememberHaptics()
+        val outputLabel = stringResource(Res.string.audio_output)
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(Modifier.size(48.dp).clickable(onClick = onOutput), contentAlignment = Alignment.Center) {
+            // One background-free route glyph. Open our output drawer first;
+            // its Bluetooth/AirPlay row owns the native route-picker overlay.
+            Box(
+                Modifier.size(48.dp)
+                    .semantics { contentDescription = outputLabel }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                    ) { haptics.play(Haptic.Tap); onOutput() },
+                contentAlignment = Alignment.Center,
+            ) {
                 PlayerPlatform.host.OutputGlyph(Modifier.size(26.dp))
-                if (PlayerPlatform.host.hasRoutePicker) PlayerPlatform.host.RoutePickerOverlay(Modifier.matchParentSize())
             }
             if (!hideParty) BottomGlyph(icon = Icons.Rounded.Person, contentDescription = stringResource(Res.string.listen_together_open), onClick = if (badge.inParty) onOpenMembers else onParty, highlighted = badge.inParty)
             if (!hideVideo && videoToggle != null) BottomGlyph(icon = if (videoToggle.video) LayaIcons.MusicNote else Icons.Rounded.Videocam, contentDescription = stringResource(if (videoToggle.video) Res.string.switch_to_audio else Res.string.switch_to_video), onClick = videoToggle.onToggle)
@@ -998,7 +1002,7 @@ private fun PillSegment(
     loading: Boolean = false,
     /** See [BottomGlyph], where the same window means the same thing. */
     tapWindowMs: Long = 0L,
-    /** Per-segment override — see [OutputPartyPill]'s three-up capsule. */
+    /** Per-segment override — see [OutputActions]'s three-up capsule. */
     width: Dp = PILL_SEGMENT_WIDTH,
 ) {
     val haptics = rememberHaptics()
@@ -1144,7 +1148,7 @@ internal fun OutputCaption(
     }
 }
 
-/** The three fields of a party the player draws — see [OutputPartyPill]. */
+/** The three fields of a party the player draws — see [OutputActions]. */
 private data class PartyBadge(
     val inParty: Boolean,
     val members: Int,

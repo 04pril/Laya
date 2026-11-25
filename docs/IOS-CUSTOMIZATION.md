@@ -5,7 +5,7 @@ User-approved scope (2026-11-25). The checklist describes implemented code; devi
 - [x] Korean/English language selection and translation of iOS-specific screens.
 - [x] App-local WireGuard, HTTP, HTTPS and SOCKS5; settings entry, proxy-first onboarding like 04pril/BitChord-Android, signed-out entry; API/audio/downloads and Google login WebKit coverage.
 - [x] Lyrics fonts: shared or Korean/Latin size and weight, live preview; unified source/change visibility; existing blur setting.
-- [x] Simple footer enabled by default; hide Listen Together and video buttons by default; background-free output icon with AirPods variants. Hiding a button does not disable its feature.
+- [x] Background-free native output glyph with AirPods variants; opens the in-app Audio Output drawer. Hide Listen Together and video buttons by default. Hiding a button does not disable its feature.
 - [x] Open full player on explicit song selection (option); downward dismissal in both expanded and inline mini-player layouts, preserving horizontal skips and upward expansion.
 - [x] Queue multi-selection, remove and undo; playlist picker search; liked-song downloads matching our BitChord iOS (initial liked-library sync and new likes, default off, no deletion on unlike).
 - [x] Independent library removal and owned source-playlist entry removal, respecting duplicate entry IDs and account scope.
@@ -19,7 +19,7 @@ Do not import BitChord's playback modes, buffering policies or other omitted fea
 - iOS 17 이상. `설정 → 플레이어 및 편의 설정`에서 플레이어·가사·다운로드·CarPlay 옵션을 설정합니다.
 - 앱 언어는 한국어/English 두 가지이며, 선택 즉시 UI를 다시 구성합니다. 재생은 같은 플레이어를 유지합니다.
 - WireGuard/프록시는 첫 실행의 로그인 전 단계, 로그인 진입 창, 일반 설정에서 엽니다. 연결 설정을 바꾼 뒤 앱을 완전히 종료하고 다시 실행해야 합니다.
-- 간단한 하단 버튼, 함께 듣기 숨김, 비디오 숨김, 곡 선택 시 전체 플레이어 열기는 기본 켜짐입니다. 좋아요 자동 다운로드와 CarPlay 화면 유지는 기본 꺼짐입니다.
+- 하단 출력 버튼은 배경 없는 기기별 아이콘으로 통일했습니다. 함께 듣기 숨김, 비디오 숨김, 곡 선택 시 전체 플레이어 열기는 기본 켜짐입니다. 좋아요 자동 다운로드와 CarPlay 화면 유지는 기본 꺼짐입니다.
 - 좋아요 자동 다운로드는 켤 때 현재 계정의 좋아요 목록을 조회하며 새 좋아요에도 적용합니다. 기존 다운로드는 중복으로 받지 않고, 좋아요 취소 시 파일을 삭제하지 않습니다. Wi-Fi 전용 설정을 따릅니다.
 - 큐의 ‘여러 곡 선택’으로 앞으로 재생할 항목만 선택합니다. 삭제 후 큐 수정이나 현재 곡 변경이 있으면 오래된 삭제를 되돌릴 수 없습니다.
 - 플레이리스트 삭제는 현재 계정 소유임을 서버 응답으로 확인한 원본 플레이리스트에 한정합니다. 원래 항목 ID가 없으면 중복 곡을 임의로 선택하지 않습니다.
@@ -35,7 +35,7 @@ bash iosApp/scripts/test-native-customization.sh
 (cd WireGuard && go test ./...)
 ```
 
-IPA는 `build/Laya-1.9.6-custom41.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
+IPA는 `build/Laya-1.9.6-custom42.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
 
 자동 검사 범위: iOS Kotlin 컴파일, 앱/위젯 빌드, 설정 저장/범위 검증, 중복 항목 큐 삭제와 되돌리기 무효화, 한국어/영어 런타임 전환, 서명된 Mach-O의 App Group 읽기, Go 프록시 엔진 테스트.
 
@@ -50,10 +50,10 @@ IPA는 `build/Laya-1.9.6-custom41.ipa`에 생성됩니다. 배포용 Apple 서�
 
 ## 독립 테스트 앱
 
-`layatest-1.9.6-custom41.ipa`는 같은 수정본을 별도 앱으로 설치하는 변형입니다. 앱 식별자는 `com.music.layatest`, 위젯은 `com.music.layatest.widgets`, App Group은 `group.com.music.layatest`, URL 스킴은 `layatest`입니다. 기본 앱의 데이터 컨테이너와 Keychain 서비스, 프록시 비밀정보, 위젯 저장소·링크를 공유하지 않습니다. Laya와 동시에 설치할 수 있습니다.
+`layatest-1.9.6-custom42.ipa`는 같은 수정본을 별도 앱으로 설치하는 변형입니다. 앱 식별자는 `com.music.layatest`, 위젯은 `com.music.layatest.widgets`, App Group은 `group.com.music.layatest`, URL 스킴은 `layatest`입니다. 기본 앱의 데이터 컨테이너와 Keychain 서비스, 프록시 비밀정보, 위젯 저장소·링크를 공유하지 않습니다. Laya와 동시에 설치할 수 있습니다.
 
 ```sh
-python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom41.ipa build/layatest-1.9.6-custom41.ipa
+python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom42.ipa build/layatest-1.9.6-custom42.ipa
 ```
 
 ## 빌드 40 · 화면과 위젯 보완
@@ -70,3 +70,11 @@ python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom41.ipa build/laya
 - 빗코드의 세로 플레이어와 동일하게 안전 영역 아래쪽 추가 여백을 18dp에서 4dp로, 하단 버튼과 출력 기기 이름 사이를 18dp에서 12dp로 조정했습니다. 출력 이름도 20dp 슬롯의 위쪽 대신 중앙에 정렬합니다. 제목·재생 컨트롤·하단 버튼이 과하게 올라가 보이던 배치를 낮추되 시스템 안전 영역은 유지합니다. 플랫폼 호스트의 레이아웃 값으로 구분합니다.
 - AirPods 이어버드 출력 아이콘만 1.18배 확대했습니다. 헤드폰/AirPods Max 아이콘과 48dp 출력 선택 터치 영역은 유지합니다. 투명 PNG를 Compose 안에서 그리는 기존 경로도 유지합니다.
 - 검증: iOS Kotlin 컴파일, iPhone Release 앱·위젯 빌드와 서명 검사, 일반/독립 테스트 IPA 식별자·App Group·체크섬 검사. 화면 위치의 최종 비교는 실기기 확인이 필요합니다.
+
+## 빌드 42 · 출력 버튼 통일
+
+- ‘간단한 하단 버튼 구성’ 설정과 저장 상태를 읽는 경로를 제거했습니다. 이전에 해당 옵션을 꺼 두었어도 iOS에서는 항상 하나의 출력 버튼 형태를 사용합니다.
+- 헤드폰·AirPods·AirPods Max는 기존 네이티브 기기별 심벌을 표시합니다. 빌드 41의 AirPods 이어버드 확대도 적용됩니다. 출력 아이콘의 회색 캡슐 및 터치 시 배경을 그리지 않습니다.
+- 아이콘을 누르면 앱의 ‘오디오 출력’ 창을 먼저 엽니다. 하단 아이콘 위에 있던 투명 AVRoutePickerView를 제거했으며, 시스템 기기 선택기는 출력 창의 Bluetooth/AirPlay 항목에서 엽니다. 출력 이름을 누르는 것과 동일한 창입니다.
+- 함께 듣기/비디오 버튼 숨김 옵션과 48dp 출력 버튼 터치 영역, 버튼 접근성 설명·역할을 유지합니다.
+- 검증: 설정 저장 회귀 검사, iOS Kotlin 컴파일 및 iPhone Release 앱·위젯 빌드, 일반/독립 테스트 IPA 무결성·버전·식별자·App Group 분리 확인. 실제 기기에서 창 열기와 표시 확인이 필요합니다.

@@ -8,7 +8,6 @@ object IosCustomization {
     var installed = false; private set
     private var store: Settings? = null
     val language = MutableStateFlow("en")
-    val simpleFooter = MutableStateFlow(false)
     val hideParty = MutableStateFlow(false)
     val hideVideo = MutableStateFlow(false)
     val openPlayer = MutableStateFlow(true)
@@ -27,10 +26,10 @@ object IosCustomization {
         store = settings
         installed = true
         language.value = settings.getString("app_language_override", defaultLanguage).let { if (it == "ko") "ko" else "en" }
-        listOf("simple_footer" to simpleFooter, "hide_party" to hideParty, "hide_video" to hideVideo,
+        listOf("hide_party" to hideParty, "hide_video" to hideVideo,
             "open_player" to openPlayer, "download_likes" to downloadLikes, "keep_car_screen_on" to keepCarScreenOn,
             "separate_fonts" to separateFonts).forEach { (key, flow) ->
-            flow.value = settings.getBoolean("ios_$key", key in setOf("simple_footer", "hide_party", "hide_video", "open_player", "show_lyrics_source", "show_lyrics_change"))
+            flow.value = settings.getBoolean("ios_$key", key in setOf("hide_party", "hide_video", "open_player"))
         }
         // Preserve an older decision to hide either part when merging the two switches.
         showLyricsProvider.value = settings.getBoolean("ios_show_lyrics_provider",
