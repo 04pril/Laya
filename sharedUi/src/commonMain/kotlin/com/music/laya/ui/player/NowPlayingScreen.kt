@@ -2018,11 +2018,16 @@ fun NowPlayingScreen(
                             )
                         }
                     },
+                    portraitHeader = {
+                        LandscapeCredits(song, signedIn, likeStatus, showRevertCue,
+                            onToggleLike, onOpenMenu, onOpenAlbum, onOpenArtist)
+                    },
                     actions = playerActions,
-                    mainPane = { compact ->
+                    mainPane = { compact, detachedCredits ->
                         LandscapeMainPane(
                             compact = compact,
-                            maxContentWidth = if (tabletPlayer) 600.dp else PLAYER_MAX_WIDTH,
+                            maxContentWidth = if (tabletPlayer) 1100.dp else PLAYER_MAX_WIDTH,
+                            showCredits = !detachedCredits,
                             lyricStripBottomGap = if (tabletPlayer) 12.dp else 0.dp,
                             caption = if (hideSongStatus) null else playbackOriginText(song, playedBy),
                             onOpenCaption = openPlaybackOrigin,

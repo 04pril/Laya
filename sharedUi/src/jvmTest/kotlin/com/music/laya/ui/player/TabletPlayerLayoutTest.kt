@@ -102,7 +102,13 @@ class TabletPlayerLayoutTest {
                                 TabletPlayerActionRow(pane == PlayerPane.Lyrics, pane == PlayerPane.Queue, true, null,
                                     {}, {}, {}, {}, {}, {})
                             } },
-                            mainPane = { compact ->
+                            portraitHeader = {
+                                Box(Modifier.fillMaxWidth().onGloballyPositioned { bounds["header"] = it.boundsInRoot() }) {
+                                    LandscapeCredits(Song("preview", "Snowman", "Sia", null), false, LikeStatus.INDIFFERENT,
+                                        false, {}, {}, {}, { _, _ -> })
+                                }
+                            },
+                            mainPane = { compact, detachedCredits ->
                                 Box(Modifier.onGloballyPositioned { bounds["controls"] = it.boundsInRoot() }) {
                                     LandscapeMainPane(compact, null, {},
                                         credits = { LandscapeCredits(Song("preview", "Snowman", "Sia", null), false, LikeStatus.INDIFFERENT,
@@ -119,7 +125,8 @@ class TabletPlayerLayoutTest {
                                         } },
                                         transport = { TabletTransportControls(false, 0, {}, {}) { TransportRow(true, false, true, true, {}, {}, {}, compact) } },
                                         volume = { Box(Modifier.onGloballyPositioned { bounds["volume"] = it.boundsInRoot() }) { VolumeRow({ 0.6f }, {}, {}) } },
-                                        maxContentWidth = 600.dp,
+                                        maxContentWidth = 1100.dp,
+                                        showCredits = !detachedCredits,
                                         lyricStripBottomGap = 12.dp,
                                     )
                                 }
@@ -161,8 +168,24 @@ class TabletPlayerLayoutTest {
                     assertTrue(art.bottom <= controls.top, "Artwork must precede credits/transport: $bounds")
                     assertTrue(actions.top - controls.bottom <= 65f, "The deck must not leave a large empty area above the footer: $bounds")
                     assertTrue(controls.bottom <= actions.top, "Controls must stay above the footer: $bounds")
-                    assertTrue(art.width >= 240 && art.height == art.width)
-                    if (art.width >= 280) {
+                    val portrait = height > width
+                    if (portrait && pane != PlayerPane.Main) {
+                        assertEquals(64f, art.width, 1f)
+                        assertTrue(art.top < height * 0.1f, "Portrait panels need a small header at the top: $bounds")
+                        val header = bounds.getValue("header")
+                        assertTrue(header.left > art.right)
+                        assertTrue(bounds.getValue("panel").top >= art.bottom)
+                        assertTrue(bounds.getValue("panel").bottom <= controls.top)
+                        assertTrue(bounds.getValue("panel").width > width * 0.8f, "Portrait lyrics/queue use the available width")
+                    } else {
+                        assertTrue(art.width >= 240 && art.height == art.width)
+                        if (portrait) {
+                            assertTrue(art.width >= width * 0.6f, "Portrait cover must not use a half-width landscape column: $bounds")
+                            assertTrue(art.top < height * 0.25f, "Portrait cover must not be pinned near the bottom: $bounds")
+                            assertTrue(controls.width > width * 0.8f)
+                        }
+                    }
+                    if (!portrait && art.width >= 280) {
                         assertEquals(art.left, controls.left, 1f)
                         assertEquals(art.right, controls.right, 1f)
                     }
@@ -177,7 +200,7 @@ class TabletPlayerLayoutTest {
                         assertNull(bounds["panel"])
                     } else {
                         assertTrue(art.center.x < width / 2f)
-                        assertTrue(bounds.getValue("panel").left >= art.right)
+                        if (!portrait) assertTrue(bounds.getValue("panel").left >= art.right)
                         if (pane == PlayerPane.Queue) assertNotNull(bounds["strip"])
                         if (pane == PlayerPane.Lyrics) {
                             val statusVisible = semantics.any { node -> node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == "Lyrics: preview" } == true }

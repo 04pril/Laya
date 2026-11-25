@@ -53,14 +53,19 @@ internal fun TabletPlayerLayout(
     background: @Composable (Modifier) -> Unit,
     artwork: @Composable (Modifier) -> Unit,
     actions: @Composable () -> Unit,
-    mainPane: @Composable (Boolean) -> Unit,
+    mainPane: @Composable (Boolean, Boolean) -> Unit,
     lyricsPane: @Composable () -> Unit,
     queuePane: @Composable () -> Unit,
     modifier: Modifier = Modifier,
+    portraitHeader: @Composable () -> Unit = {},
 ) {
     Box(modifier.fillMaxSize()) {
         background(Modifier.fillMaxSize())
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(stableStatusBarInsets()))) {
+            if (maxHeight > maxWidth) {
+                PortraitTabletPlayer(pane, artwork, actions, mainPane, portraitHeader, lyricsPane, queuePane)
+                return@BoxWithConstraints
+            }
             val panelOpen = pane != PlayerPane.Main
             val metrics = tabletPlayerMetrics(maxWidth, panelOpen)
             val playerWidth by animateDpAsState(metrics.playerWidth, tween(320), label = "tabletPlayerWidth")
@@ -74,7 +79,7 @@ internal fun TabletPlayerLayout(
                     Layout(
                         content = {
                             Box { artwork(Modifier.fillMaxSize()) }
-                            Box(Modifier.fillMaxWidth()) { mainPane(compact) }
+                            Box(Modifier.fillMaxWidth()) { mainPane(compact, false) }
                         },
                         modifier = Modifier.offset(x = left).width(playerWidth).fillMaxHeight(),
                     ) { children, constraints ->
@@ -118,5 +123,47 @@ private fun TabletSidePanel(
                 PlayerPane.Main -> Unit
             }
         }
+    }
+}
+
+/** Portrait uses a full-width deck; opening a panel replaces the sleeve with a
+ * compact header instead of squeezing landscape columns into a tall window. */
+@Composable
+private fun PortraitTabletPlayer(
+    pane: PlayerPane,
+    artwork: @Composable (Modifier) -> Unit,
+    actions: @Composable () -> Unit,
+    mainPane: @Composable (Boolean, Boolean) -> Unit,
+    header: @Composable () -> Unit,
+    lyrics: @Composable () -> Unit,
+    queue: @Composable () -> Unit,
+) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val gutter = minOf(64.dp, maxWidth * 0.065f)
+        val compact = maxHeight < 1000.dp
+        val panelOpen = pane != PlayerPane.Main
+        Column(Modifier.fillMaxSize().padding(top = 64.dp, bottom = 8.dp)) {
+            if (panelOpen) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = gutter, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    artwork(Modifier.size(64.dp))
+                    Spacer(Modifier.width(16.dp))
+                    Box(Modifier.weight(1f)) { header() }
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().padding(horizontal = gutter)) {
+                    if (pane == PlayerPane.Lyrics) lyrics() else queue()
+                }
+            } else {
+                BoxWithConstraints(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val side = minOf(700.dp, maxWidth * 0.74f, (maxHeight - 48.dp).coerceAtLeast(0.dp))
+                    artwork(Modifier.size(side))
+                }
+            }
+            Box(Modifier.fillMaxWidth().padding(horizontal = gutter)) { mainPane(compact, panelOpen) }
+            Spacer(Modifier.height(16.dp))
+            Box(Modifier.fillMaxWidth().padding(horizontal = gutter)) { actions() }
+        }
+        Box(Modifier.align(Alignment.TopCenter).offset(y = 8.dp).size(38.dp, 5.dp)
+            .clip(RoundedCornerShape(3.dp)).background(LocalPlayerTint.current.copy(alpha = 0.7f)))
     }
 }

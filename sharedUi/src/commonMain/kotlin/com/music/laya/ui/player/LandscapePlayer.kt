@@ -147,14 +147,15 @@ internal fun LandscapePlayerLayout(
     /** The row under the sleeve, emitted into its column. */
     actions: @Composable () -> Unit,
     /** Credits and transport. [compact] is a phone-height window. */
-    mainPane: @Composable (compact: Boolean) -> Unit,
+    mainPane: @Composable (compact: Boolean, detachedCredits: Boolean) -> Unit,
     lyricsPane: @Composable () -> Unit,
     queuePane: @Composable () -> Unit,
     modifier: Modifier = Modifier,
     tablet: Boolean = false,
+    portraitHeader: @Composable () -> Unit = {},
 ) {
     if (tablet) {
-        TabletPlayerLayout(pane, background, artwork, actions, mainPane, lyricsPane, queuePane, modifier)
+        TabletPlayerLayout(pane, background, artwork, actions, mainPane, lyricsPane, queuePane, modifier, portraitHeader)
         return
     }
     Box(modifier = modifier.fillMaxSize()) {
@@ -227,7 +228,7 @@ internal fun LandscapePlayerLayout(
                                 .padding(horizontal = gutter),
                             contentAlignment = Alignment.Center,
                         ) {
-                            mainPane(compact)
+                            mainPane(compact, false)
                         }
                         // The lyric sheet and the queue both reach back across
                         // [PLAYER_GUTTER] on their own (see
@@ -383,13 +384,14 @@ internal fun LandscapeMainPane(
     modifier: Modifier = Modifier,
     maxContentWidth: androidx.compose.ui.unit.Dp = PLAYER_MAX_WIDTH,
     lyricStripBottomGap: androidx.compose.ui.unit.Dp = 0.dp,
+    showCredits: Boolean = true,
 ) {
     Column(
         modifier = modifier
             .widthIn(max = maxContentWidth)
             .fillMaxWidth(),
     ) {
-        if (caption != null) {
+        if (showCredits && caption != null) {
             PlaybackOriginCaption(
                 text = caption,
                 onClick = onOpenCaption,
@@ -398,8 +400,10 @@ internal fun LandscapeMainPane(
             )
             Spacer(Modifier.height(if (compact) 4.dp else 8.dp))
         }
-        credits()
-        Spacer(Modifier.height(if (compact) 2.dp else 10.dp))
+        if (showCredits) {
+            credits()
+            Spacer(Modifier.height(if (compact) 2.dp else 10.dp))
+        }
         if (lyricStrip != null) {
             lyricStrip()
             Spacer(Modifier.height(lyricStripBottomGap))
