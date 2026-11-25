@@ -1,86 +1,32 @@
 {
-  "name": "Laya",
-  "identifier": "com.music.laya.source",
-  "subtitle": "Laya for iOS, straight from GitHub releases.",
-  "description": "Official SideStore / AltStore source for Laya. New versions appear here as soon as a GitHub release is published.",
-  "iconURL": "https://raw.githubusercontent.com/impin2rex/Laya/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
-  "website": "https://github.com/impin2rex/Laya",
-  "sourceURL": "https://raw.githubusercontent.com/impin2rex/Laya/main/sidestore/source.json",
+  "name": "Laya iOS · 04pril",
+  "identifier": "com.music.laya.04pril.source",
+  "subtitle": "한국어·프록시·가사 사용자화·위젯을 추가한 Laya iOS.",
+  "description": "04pril/laya-iOS의 정식 릴리즈를 배포하는 AltStore Classic / SideStore 소스입니다. Laya 원작: impin2rex.",
+  "iconURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+  "website": "https://github.com/04pril/laya-iOS",
+  "sourceURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/sidestore/source.json",
   "tintColor": "#000000",
   "apps": [
     {
       "name": "Laya",
       "bundleIdentifier": "com.music.laya",
-      "developerName": "impin2rex",
-      "subtitle": "Music player with lyrics, karaoke and Listen Together.",
-      "localizedDescription": "Laya is a music player with synced lyrics, on-device karaoke, Listen Together, Atmos-style reverb and home-screen widgets.",
-      "iconURL": "https://raw.githubusercontent.com/impin2rex/Laya/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "developerName": "04pril · Laya by impin2rex",
+      "subtitle": "한국어·프록시·가사 사용자화·위젯",
+      "localizedDescription": "Laya iOS에 한국어, 앱 내부 프록시, 가사 사용자화와 BitChord의 커스텀 위젯을 더했습니다.",
+      "iconURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
       "tintColor": "#000000",
       "category": "entertainment",
       "screenshots": [],
       "versions": [
         {
           "version": "1.9.6",
-          "buildVersion": "37",
-          "date": "2026-11-21T12:17:46Z",
-          "localizedDescription": "*   **Tidal and Qobuz are now sources of their own.** Turn one on in **Settings → Sources**, verify once, and Laya streams FLAC straight from it. No addon, nothing to install.\n*   Verification lasts a while and says so: each source reads **Verified · until \\<time\\>**.\n*   Laya now checks that in the background, so an expired source switches itself off with a notice instead of failing silently the next time you press play.\n*   On iOS, **Qobuz only** — Tidal's streams are a format the iOS player can't play.\n\n*   **Last.fm and ListenBrainz scrobbling**, the same as Android, set up from the **Account** page. Track changes, pauses and resumes all count.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.6/Laya-1.9.6-ios.ipa",
-          "size": 81003405,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.5",
-          "buildVersion": "36",
-          "date": "2026-11-17T15:13:42Z",
-          "localizedDescription": "- **Control Center control** to recognize from anywhere (iOS 18 and later).\n- **Live Activity** on the lock screen and in the Dynamic Island while Laya listens, with a Cancel button.\n- The result arrives as a notification, with **Try again** when it couldn't recognize the song.\n- **Long-press the Laya icon** for new **Search** and **Recognize music** shortcuts.\n- Your music stays on the speaker or your AirPods while Laya listens.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.5/Laya-1.9.5-ios.ipa",
-          "size": 80749709,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.4",
-          "buildVersion": "35",
-          "date": "2026-11-14T18:18:44Z",
-          "localizedDescription": "- New setting in Settings → Playback, **off by default**.\n- When on, Laya's volume bar sets only Laya's own level. Your phone's media volume and volume buttons stay as they are. Laya's level can't go above the phone's media volume.\n- Normalization, ReplayGain, crossfade, the equalizer and Dolby playback all keep working.\n\n- Picture in picture keeps playing into the next music video instead of closing.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.4/Laya-1.9.4-ios.ipa",
-          "size": 80510045,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.3",
-          "buildVersion": "34",
-          "date": "2026-11-12T13:25:22Z",
-          "localizedDescription": "- Voice search through Apple's speech recognition (what Siri uses). Laya asks for the microphone and speech recognition the first time.\n- On **Auto**, Hindi is written the way song titles are listed: \"तू मिल जाए\" goes in as \"tu mil jaye\". Choose हिन्दी from the long-press menu to keep it in Devanagari.\n- Bangla isn't offered, because Apple's speech recognition doesn't support it.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.3/Laya-1.9.3-ios.ipa",
-          "size": 80438933,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.2",
-          "buildVersion": "33",
-          "date": "2026-11-05T03:20:27Z",
-          "localizedDescription": "- Music videos with the audio/video switch; VP9 up to 4K on iOS 26.2 and later.\n- Video plays in the mini player too (Settings), and keeps playing while the player expands, collapses or rotates.\n- Picture-in-picture, which also starts by itself when you leave the app with a video playing.\n- With video in the mini player on, the lyrics and queue header plays the video instead of showing the album art.\n- Long videos no longer run the app out of memory.\n- The player menu no longer climbs to the top of the screen and jumps.\n- Swiping a song to the queue adds it once, not several times.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.2/Laya-1.9.2-ios.ipa",
-          "size": 86724710,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.1",
-          "buildVersion": "32",
-          "date": "2026-10-30T16:47:24Z",
-          "localizedDescription": "- **Landscape support.** Rotate your iPhone; pages, the tab bar and the mini player stay clear of the notch and Dynamic Island. No more white flash while rotating.\n- **Several Google accounts.** Add, switch between and remove accounts, including Brand profiles, from the Account page. Your existing sign-in carries over.\n- **App icon picker** in Settings: Default, Liquid Glass and Liquid Glass Dark (real glass on iOS 26).\n- **Artist header video**, as on Android, when animated canvas is on.\n- **Follow artists and save releases** from their pages; Library updates right away.\n- **Liked Music and long playlists** now load in full, not just the first 100 songs.\n- **Quality upgrades mid-song** swap in without stopping playback, and the player menu has Upgrade quality and Revert to original.\n- **Lock screen controls** (play, pause, seek, next, previous) now work with Listen Together, and the lock screen no longer stays on Pause after you stop.\n- **Listen Together** stays in sync after the phone has been locked, and track changes no longer jump to the previous song's position.\n- Song and player menus: no more bouncing while scrolling; album and artist links work for more songs, and the player closes before opening a page.\n- Spotify connects through the in-app sign-in page only.",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.1/Laya-1.9.1-ios.ipa",
-          "size": 86541580,
-          "minOSVersion": "16.0"
-        },
-        {
-          "version": "1.9.0",
-          "buildVersion": "31",
-          "date": "2026-10-23T05:31:26Z",
-          "localizedDescription": "Bug Fixes",
-          "downloadURL": "https://github.com/impin2rex/Laya/releases/download/v1.9.0/Laya-1.9.0-ios.ipa",
-          "size": 75207510,
-          "minOSVersion": "16.0"
+          "buildVersion": "43",
+          "date": "2026-11-25T10:56:22Z",
+          "localizedDescription": "* 한국어 번역 추가.\n* 앱 내부 WireGuard·HTTP·HTTPS·SOCKS5 프록시 지원.\n* 로그인 전 프록시 설정과 Google 로그인·다운로드 프록시 적용.\n* 가사 전체 또는 한글·영문별 크기·굵기 설정과 미리보기 추가.\n* 가사 출처·변경 표시를 하나의 설정으로 통합하고 숨김 시 여백 제거.\n* 하단 버튼 구성을 간결하게 통일하고 함께 듣기·비디오 버튼 숨김 옵션 추가.\n* 곡 선택 시 전체 플레이어 자동 열기 옵션 추가.\n* 일반·한 줄 미니플레이어에서 아래로 밀어 재생 종료 지원.\n* 큐 여러 곡 선택·일괄 삭제·되돌리기 추가.\n* 플레이리스트 선택창 검색 추가.\n* 기존·새 좋아요 곡 자동 다운로드 옵션 추가.\n* 현재 곡의 보관함·내 플레이리스트 삭제 기능 추가.\n* 좋아요 취소와 보관함 삭제 동작 분리.\n* Bitchord에서 커스텀한 위젯 이식.\n* 재서명 후 공유 저장소 연결, 잠금화면·다이나믹 아일랜드 나우플레잉의 앱 실행 연결 보완.\n* AirPods 종류별 출력 아이콘 추가.\n* CarPlay 연결 중 화면 켜짐 유지 옵션 추가.\n* 플레이어 하단 여백을 애플뮤직 기준으로 조정.\n",
+          "downloadURL": "https://github.com/04pril/laya-iOS/releases/download/ios-v1.9.6-43/Laya-1.9.6-custom43.ipa",
+          "size": 90565094,
+          "minOSVersion": "17.0"
         }
       ],
       "appPermissions": {
@@ -88,8 +34,10 @@
           "com.apple.security.application-groups"
         ],
         "privacy": {
+          "NSLocalNetworkUsageDescription": "Laya finds Chromecasts and Google Cast speakers on your Wi-Fi so you can play music on them.",
+          "NSMicrophoneUsageDescription": "Laya listens through the microphone when you search by voice or recognize a song playing nearby.",
           "NSPhotoLibraryAddUsageDescription": "Laya saves your Replay and lyrics cards to your photo library when you tap Save.",
-          "NSLocalNetworkUsageDescription": "Laya finds Chromecasts and Google Cast speakers on your Wi-Fi so you can play music on them."
+          "NSSpeechRecognitionUsageDescription": "Laya turns what you say into a search for songs, artists, albums and playlists."
         }
       }
     }

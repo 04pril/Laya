@@ -33,13 +33,13 @@ jobs:
         TAG: ${{ github.event.release.tag_name || inputs.tag }}
       run: |
         tag="${TAG:-$(gh release view --json tagName -q .tagName)}"
-        if [ "$(gh release view "$tag" --json isDraft -q .isDraft)" = "true" ]; then
-          echo "::notice::$tag is still a draft; publishing it adds it to the source"
+        if [ "$(gh release view "$tag" --json isDraft,isPrerelease -q '.isDraft or .isPrerelease')" = "true" ]; then
+          echo "::notice::$tag is a draft or prerelease; only regular releases enter this source"
           exit 0
         fi
-        name=$(gh release view "$tag" --json assets -q '.assets[].name | select(endswith("-ios.ipa"))' | head -1)
+        name=$(gh release view "$tag" --json assets -q '.assets[].name | select(startswith("Laya-") and endswith(".ipa"))' | head -1)
         if [ -z "$name" ]; then
-          echo "::notice::$tag has no -ios.ipa; re-run this workflow once release.yml attaches one"
+          echo "::notice::$tag has no primary Laya IPA; re-run once the release carries one"
           exit 0
         fi
         gh release download "$tag" -p "$name" -O app.ipa
@@ -48,10 +48,11 @@ jobs:
         unzip -p app.ipa 'Payload/Laya.app/Info.plist' > Info.plist
         read -r ver build minos < <(python3 -c "import plistlib;p=plistlib.load(open('Info.plist','rb'));print(p['CFBundleShortVersionString'],p['CFBundleVersion'],p.get('MinimumOSVersion','16.0'))")
         # Only the release notes' iOS section (a "## ... iOS" / "### ... iOS" heading, up to the next heading);
-        # a release with none still ships an IPA, so it reads as fixes.
+        # without an iOS heading, use the complete release notes.
         notes=$(gh release view "$tag" --json body -q .body | tr -d '\r' \
           | awk '/^##+ / { f = ($0 ~ /iOS|iPhone/); next } f' \
           | sed -e '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')
+        [ -n "$notes" ] || notes="$(gh release view "$tag" --json body -q .body)"
         [ -n "$notes" ] || notes="Bug Fixes"
         jq \
           --arg v "$ver" --arg b "$build" --arg m "$minos" \

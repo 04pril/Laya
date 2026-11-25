@@ -150,9 +150,17 @@ Grab the latest build for your device from the [Releases](https://github.com/imp
 
 The iOS build is an unsigned `.ipa`, so it has to be signed with your own Apple ID. [SideStore](https://sidestore.io) does this on the device and refreshes the app by itself, no computer needed after setup.
 
+**AltStore Classic / SideStore source for this fork:**
+
+```text
+https://raw.githubusercontent.com/04pril/laya-iOS/main/sidestore/source.json
+```
+
+Add this URL in **Sources → +** to install the current regular release and receive updates.
+
 1. **Set up SideStore** once by following the official guide at [docs.sidestore.io](https://docs.sidestore.io). It needs a computer for the first install, a free Apple ID, and a local VPN (LocalDevVPN / StosVPN) that SideStore uses to refresh apps.
 2. **Enable Developer Mode** on the device: Settings → Privacy & Security → Developer Mode → On, then restart.
-3. **Download the IPA** from [Releases](https://github.com/impin2rex/Laya/releases) straight onto the iPhone (`Laya-<version>-ios.ipa`).
+3. **Download the IPA** from [Releases](https://github.com/04pril/laya-iOS/releases/latest) straight onto the iPhone (`Laya-<version>-custom<build>.ipa`).
 4. In SideStore open **My Apps**, tap **+**, and pick the downloaded IPA. Sign in with your Apple ID if asked and wait for the install to finish.
 5. Turn the VPN on and open **Laya** from the home screen. If iOS says the developer is untrusted, go to Settings → General → VPN & Device Management and trust your Apple ID.
 
