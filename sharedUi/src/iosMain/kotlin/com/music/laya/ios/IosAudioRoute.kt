@@ -15,6 +15,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.material.icons.rounded.Headphones
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -163,19 +165,25 @@ private fun Line(label: String, value: String) {
     }
 }
 
-/** SF Symbols preserves the exact AirPods silhouettes instead of substituting Material icons. */
-@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+/** Rasterize SF Symbols once per route and draw them in the SAME Compose layer as the player.
+ * A UIImageView behind the transparent/blurred Compose surface was sampled as a corrupt black tile.
+ */
 @Composable
 internal fun IosOutputGlyph(modifier: Modifier) {
     val outputs = rememberCurrentOutputs()
     val symbol = outputs.let { IosNative.host?.outputSymbol() ?: "headphones" }
-    UIKitView(
-        factory = { platform.UIKit.UIImageView().apply {
-            tintColor = UIColor.whiteColor
-            contentMode = platform.UIKit.UIViewContentMode.UIViewContentModeScaleAspectFit
-            userInteractionEnabled = false
-        } },
-        update = { it.image = platform.UIKit.UIImage.systemImageNamed(symbol) },
-        modifier = modifier,
-    )
+    val bitmap = remember(symbol) {
+        runCatching {
+            val png = IosNative.host?.outputSymbolPng() ?: return@runCatching null
+            val bytes = kotlin.io.encoding.Base64.decode(png)
+            org.jetbrains.skia.Image.makeFromEncoded(bytes).toComposeImageBitmap()
+        }.getOrNull()
+    }
+    if (bitmap != null) {
+        androidx.compose.foundation.Image(bitmap = bitmap, contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Fit, modifier = modifier)
+    } else {
+        androidx.compose.material3.Icon(androidx.compose.material.icons.Icons.Rounded.Headphones,
+            contentDescription = null, tint = Color.White, modifier = modifier)
+    }
 }

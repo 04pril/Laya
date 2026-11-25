@@ -36,7 +36,7 @@ struct RecognizeControl: ControlWidget {
 /// Music recognition while Laya listens in the background: the mark, "Listening…" / "Identifying…", and Cancel.
 /// Tapping it goes back to Laya's Recognize page. Started by the app; see LayaRecognitionAttributes.
 struct RecognitionLiveActivity: Widget {
-    private static let open = URL(string: "laya://widget/recognize_open")
+    private static let open = LayaAppIdentity.widgetURL("recognize_open")
 
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: LayaRecognitionAttributes.self) { context in

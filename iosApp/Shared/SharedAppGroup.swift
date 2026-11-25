@@ -5,7 +5,7 @@ import Darwin
 /// Resolve the group actually granted to this process after sideload re-signing.
 /// A defaults suite alone is not proof that the app and extension share a container.
 enum SharedAppGroup {
-    static let declaredIdentifier = "group.com.music.laya"
+    static var declaredIdentifier: String { LayaAppIdentity.appGroup }
     static let signedIdentifiers: [String]? = readSignedIdentifiers()
     static var packagedWidgetIdentifiers: [String]? {
         var host = Bundle.main

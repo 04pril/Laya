@@ -35,8 +35,23 @@ bash iosApp/scripts/test-native-customization.sh
 (cd WireGuard && go test ./...)
 ```
 
-IPA는 `build/Laya-1.9.6-custom38.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
+IPA는 `build/Laya-1.9.6-custom39.ipa`에 생성됩니다. 배포용 Apple 서명은 포함하지 않으며 설치 도구에서 다시 서명합니다.
 
 자동 검사 범위: iOS Kotlin 컴파일, 앱/위젯 빌드, 설정 저장/범위 검증, 중복 항목 큐 삭제와 되돌리기 무효화, 한국어/영어 런타임 전환, 서명된 Mach-O의 App Group 읽기, Go 프록시 엔진 테스트.
 
 실기기 확인이 필요한 항목: 두 미니플레이어 상태의 제스처와 스크롤, 실제 Google 로그인/프록시 출구/다운로드, 투명·틴트 홈 화면 위젯, 재서명 도구별 App Group, 실제 CarPlay 연결/해제. 로컬에는 iOS Simulator 런타임이 없습니다.
+
+## 빌드 39 · 실기기 오류 수정
+
+- 빌드 38의 실기기 크래시 로그에서 `customizedLyricStyle → TextStyle.copy` 경로를 확인했습니다. 한 줄 가사의 자동 줄 높이(`TextUnit.Unspecified`)를 숫자로 변환해 NaN 줄 높이를 만들던 처리를 수정했습니다. 자동 높이를 유지하며, 명시한 줄 높이의 sp/em 단위도 보존합니다.
+- 재현 테스트에서 `lineHeight can't be negative (NaN)` 예외를 확인한 뒤, 자동 높이·18~52 크기 범위·sp/em 단위·잘못된 배율 검사를 통과했습니다.
+- 하단 출력 아이콘의 `UIImageView`를 제거했습니다. 시스템 헤드폰·AirPods 심벌을 투명 PNG로 한 번 렌더링하고 Compose 이미지로 표시하여, 배경 흐림/전환과 겹치는 별도 UIKit 이미지 레이어를 없앴습니다.
+- 원본 실기기의 재생 지속 및 아이콘 표시는 빌드 39 설치 후 추가 확인이 필요합니다.
+
+## 독립 테스트 앱
+
+`layatest-1.9.6-custom39.ipa`는 같은 수정본을 별도 앱으로 설치하는 변형입니다. 앱 식별자는 `com.music.layatest`, 위젯은 `com.music.layatest.widgets`, App Group은 `group.com.music.layatest`, URL 스킴은 `layatest`입니다. 기본 앱의 데이터 컨테이너와 Keychain 서비스, 프록시 비밀정보, 위젯 저장소·링크를 공유하지 않습니다. Laya와 동시에 설치할 수 있습니다.
+
+```sh
+python3 iosApp/scripts/make-test-ipa.py build/Laya-1.9.6-custom39.ipa build/layatest-1.9.6-custom39.ipa
+```

@@ -6,6 +6,8 @@ import WebKit
 /// Proxy UI stays native; the same transport core configures Ktor's NSURLSessions and downloads.
 final class CustomizationNative: NSObject, IosCustomizationNative {
     private let launchProxySettings = UserDefaults.standard.dictionary(forKey: "LayaWireGuard") ?? [:]
+    private var symbolPNGs: [String: String] = [:]
+
     func outputSymbol() -> String {
         let name = AVAudioSession.sharedInstance().currentRoute.outputs.first?.portName.lowercased() ?? ""
         var symbol = "headphones"
@@ -18,6 +20,23 @@ final class CustomizationNative: NSObject, IosCustomizationNative {
         }
         return UIImage(systemName: symbol) == nil ? "headphones" : symbol
     }
+    func outputSymbolPng() -> String? {
+        let symbol = outputSymbol()
+        if let cached = symbolPNGs[symbol] { return cached }
+        let configuration = UIImage.SymbolConfiguration(pointSize: 26, weight: .medium)
+        guard let glyph = UIImage(systemName: symbol, withConfiguration: configuration)?
+            .withTintColor(.white, renderingMode: .alwaysOriginal) else { return nil }
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 3
+        format.opaque = false
+        let image = UIGraphicsImageRenderer(size: glyph.size, format: format).image { _ in
+            glyph.draw(at: .zero)
+        }
+        guard let encoded = image.pngData()?.base64EncodedString() else { return nil }
+        symbolPNGs[symbol] = encoded
+        return encoded
+    }
+
     func proxyReady() -> Bool {
         let current = UserDefaults.standard.dictionary(forKey: "LayaWireGuard") ?? [:]
         guard NSDictionary(dictionary: current).isEqual(to: launchProxySettings) else { return false }

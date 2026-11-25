@@ -62,7 +62,7 @@ import kotlin.coroutines.suspendCoroutine
  */
 @OptIn(BetaInteropApi::class, kotlinx.cinterop.ExperimentalForeignApi::class)
 internal object Keychain {
-    private const val SERVICE = "com.music.laya"
+    private val SERVICE get() = platform.Foundation.NSBundle.mainBundle.bundleIdentifier ?: "com.music.laya"
 
     private inline fun <T> withQuery(key: String, fill: (CFMutableDictionaryRef?) -> Unit, use: (CFMutableDictionaryRef?) -> T): T {
         val dict = CFDictionaryCreateMutable(null, 0, kCFTypeDictionaryKeyCallBacks.ptr, kCFTypeDictionaryValueCallBacks.ptr)

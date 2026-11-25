@@ -18,7 +18,11 @@
 NSString *const YTMUWGVersion = @"1.0";
 
 static NSString *const kDefaultsKey = @"LayaWireGuard";
-static NSString *const kKeychainService = @"Laya.WireGuard";
+static NSString *ProxyKeychainService(void) {
+    NSString *identifier = NSBundle.mainBundle.bundleIdentifier ?: @"com.music.laya";
+    // Preserve existing Laya credentials; alternate app identifiers get their own service.
+    return [identifier isEqualToString:@"com.music.laya"] ? @"Laya.WireGuard" : [identifier stringByAppendingString:@".WireGuard"];
+}
 static NSString *const kKeychainAccount = @"profile";
 static NSString *const kKeychainProxyAccount = @"proxy-password";
 
@@ -449,7 +453,7 @@ NSDictionary *YTMUWGProxyCounters(void) {
 
 static NSMutableDictionary *KeychainQueryFor(NSString *account) {
     return [@{(__bridge id)kSecClass: (__bridge id)kSecClassGenericPassword,
-              (__bridge id)kSecAttrService: kKeychainService,
+              (__bridge id)kSecAttrService: ProxyKeychainService(),
               (__bridge id)kSecAttrAccount: account} mutableCopy];
 }
 static NSMutableDictionary *KeychainQuery(void) { return KeychainQueryFor(kKeychainAccount); }

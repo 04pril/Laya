@@ -96,8 +96,10 @@ object IosWidgets {
 
     /** laya://widget/open and laya://widget/play?v=<id>; false for any other link. */
     fun handleUrl(url: String): Boolean {
-        if (!url.startsWith("laya://widget/")) return false
-        val rest = url.removePrefix("laya://widget/")
+        val scheme = platform.Foundation.NSBundle.mainBundle.objectForInfoDictionaryKey("LayaURLScheme") as? String ?: "laya"
+        val prefix = "$scheme://widget/"
+        if (!url.startsWith(prefix)) return false
+        val rest = url.removePrefix(prefix)
         when {
             rest.startsWith("play") -> rest.substringAfter("v=", "").substringBefore('&').takeIf { it.isNotEmpty() }
                 ?.let { perform("play:" + it.percentDecoded()) }

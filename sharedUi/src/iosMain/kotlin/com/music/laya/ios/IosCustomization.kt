@@ -17,6 +17,8 @@ import platform.WebKit.WKWebsiteDataStore
 /** Native capabilities supplied before the first Kotlin view or request is created. */
 interface IosCustomizationNative {
     fun outputSymbol(): String
+    /** Transparent SF Symbol PNG encoded as base64; drawn by Compose, never as a separate UIKit layer. */
+    fun outputSymbolPng(): String?
     fun proxyReady(): Boolean
     fun showProxy()
     fun configureBrowser(store: WKWebsiteDataStore): Boolean

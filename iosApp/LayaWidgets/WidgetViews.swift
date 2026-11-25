@@ -4,7 +4,7 @@ import WidgetKit
 // The Android layouts (res/layout/widget_media_*.xml) in SwiftUI, at the same sizes in points as they are in dp.
 
 /// What a tap anywhere but a button does: open the app on the full player (Android's openPlayer).
-let openPlayerURL = URL(string: "laya://widget/open")!
+let openPlayerURL = LayaAppIdentity.widgetURL("open")
 
 /// ALPHA_DISABLED / ALPHA_ENABLED.
 private let disabledAlpha = 90.0 / 255
@@ -243,7 +243,7 @@ struct LibraryView: View {
                 if let img = tiles[safe: i] ?? nil { Image(uiImage: img).resizable().layaArtwork().scaledToFill() } else { Color.white.opacity(0x33 / 255.0) }
             }
             .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: max(side * 0.08, 4)))
-            Link(destination: URL(string: "laya://widget/play?v=\(s.liked[i].id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!) { picture }
+            Link(destination: LayaAppIdentity.widgetURL("play?v=\(s.liked[i].id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")) { picture }
         } else {
             Color.clear.frame(width: side, height: side)
         }

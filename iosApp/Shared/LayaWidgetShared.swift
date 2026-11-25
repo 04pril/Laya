@@ -32,7 +32,7 @@ struct LayaWidgetSnapshot: Codable, Equatable {
 /// The App Group container both targets share. Sideloaders that re-sign with a free account rename the group and
 /// record the new name in Info.plist (ALTAppGroups), so that is asked first.
 enum LayaWidgetStore {
-    static let defaultGroup = "group.com.music.laya"
+    static var defaultGroup: String { LayaAppIdentity.appGroup }
     static let kinds = ["LayaNowPlaying", "LayaNowPlayingPill", "LayaNowPlayingLibrary", "LayaColorMedium", "LayaColorSmall"]
 
     static var directory: URL? {

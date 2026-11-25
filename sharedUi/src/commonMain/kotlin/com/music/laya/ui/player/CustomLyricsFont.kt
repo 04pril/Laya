@@ -4,6 +4,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.isUnspecified
 import androidx.compose.ui.unit.sp
 import com.music.laya.data.settings.IosCustomization as P
 
@@ -39,5 +40,13 @@ internal fun customizedLyricStyle(style: androidx.compose.ui.text.TextStyle): an
     val korean by P.koreanSize.collectAsState()
     val latin by P.latinSize.collectAsState()
     val scale = (if (separate) maxOf(korean, latin) else all) / 34f
-    return style.copy(lineHeight = (style.lineHeight.value * scale).sp)
+    return scaledLyricLineHeight(style, scale)
+}
+
+/** Unspecified means automatic layout, not a numeric sp value. Preserve relative em units too. */
+internal fun scaledLyricLineHeight(style: androidx.compose.ui.text.TextStyle, scale: Float): androidx.compose.ui.text.TextStyle {
+    if (style.lineHeight.isUnspecified || !scale.isFinite() || scale <= 0f) return style
+    val height = style.lineHeight * scale
+    if (!height.value.isFinite()) return style
+    return style.copy(lineHeight = height)
 }
