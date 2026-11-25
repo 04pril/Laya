@@ -6,6 +6,14 @@ import androidx.compose.ui.unit.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Text
+import androidx.compose.material3.Icon
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Headphones
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
+import com.music.laya.sharedui.resources.*
+import org.jetbrains.compose.resources.stringResource
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.layout.*
 import androidx.compose.ui.geometry.Rect
@@ -66,12 +74,22 @@ class TabletPlayerLayoutTest {
                 else -> null
             }
         } as PlayerHost
-        PlayerPlatform.install(host)
+        val priorHideParty = com.music.laya.data.settings.IosCustomization.hideParty.value
+        try {
+        com.music.laya.data.settings.IosCustomization.hideParty.value = true
         for ((width, height) in listOf(1280 to 960, 1024 to 1366, 1024 to 768, 834 to 1194, 768 to 1024, 891 to 665, 1301 to 970)) {
             for (pane in PlayerPane.entries) {
                 val bounds = mutableMapOf<String, Rect>()
+                var outputLabel = ""; var queueLabel = ""
+                PlayerPlatform.install(object : PlayerHost by host {
+                    @Composable override fun OutputGlyph(modifier: Modifier) {
+                        Icon(Icons.Rounded.Headphones, null, modifier, tint = Color.White)
+                    }
+                })
                 val scene = ImageComposeScene(width, height, Density(1f)) {
                     LayaTheme(darkTheme = true) {
+                        outputLabel = stringResource(Res.string.audio_output)
+                        queueLabel = stringResource(Res.string.up_next)
                         TabletPlayerLayout(
                             pane = pane,
                             background = { Box(it.background(Brush.verticalGradient(listOf(Color(0xff455059), Color(0xff11151a))))) },
@@ -126,6 +144,16 @@ class TabletPlayerLayoutTest {
                 }
                 try {
                     repeat(12) { scene.render((it + 1) * 100_000_000L).close() }
+                    fun nodes(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::nodes)
+                    val semantics = scene.semanticsOwners.flatMap { nodes(it.rootSemanticsNode) }
+                    fun button(label: String) = (semantics.firstOrNull { node ->
+                        node.config.getOrNull(SemanticsProperties.ContentDescription)?.any { it.equals(label, ignoreCase = true) } == true
+                    } ?: error("Missing $label from ${semantics.map { it.config.getOrNull(SemanticsProperties.ContentDescription) }}")).boundsInRoot
+                    val outputButton = button(outputLabel)
+                    val queueButton = button(queueLabel)
+                    assertTrue(outputButton.width in 44f..48f && queueButton.width == 44f)
+                    assertEquals(outputButton.left, width - queueButton.right, 1f,
+                        "Output and queue must stay at symmetric outer edges in every pane")
                     val art = bounds.getValue("art"); val controls = bounds.getValue("controls"); val actions = bounds.getValue("actions")
                     assertTrue(art.bottom <= controls.top, "Artwork must precede credits/transport: $bounds")
                     assertTrue(actions.top - controls.bottom <= 65f, "The deck must not leave a large empty area above the footer: $bounds")
@@ -164,5 +192,6 @@ class TabletPlayerLayoutTest {
                 } finally { scene.close() }
             }
         }
+        } finally { com.music.laya.data.settings.IosCustomization.hideParty.value = priorHideParty }
     }
 }
