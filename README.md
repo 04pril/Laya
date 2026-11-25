@@ -136,7 +136,7 @@ Grab the latest build for your device from the [Releases](https://github.com/imp
 | Windows | `.exe`, `.msi`, portable `.zip` | Run the `.exe` installer, no admin rights needed. The `.zip` runs from any folder. |
 | macOS | `.dmg`, `.pkg` | `arm64` for Apple Silicon, `x64` for Intel. If macOS blocks it, run `xattr -cr /Applications/Laya.app`. |
 | Linux | `.AppImage`, `.deb`, `.rpm` | AppImage: `chmod +x` and run. Debian/Ubuntu: `sudo apt install ./Laya-*.deb`. Fedora: `sudo dnf install ./Laya-*.rpm`. |
-| iPhone | `Laya-<version>-ios.ipa` | Unsigned, install with [SideStore](#install-on-iphone-with-sidestore). Runs on iPad in iPhone compatibility mode. |
+| iPhone | `Laya-<version>.ipa` | Unsigned, install with [SideStore](#install-on-iphone-with-sidestore). Runs on iPad in iPhone compatibility mode. |
 
 </div>
 
@@ -160,7 +160,7 @@ Add this URL in **Sources → +** to install the current regular release and rec
 
 1. **Set up SideStore** once by following the official guide at [docs.sidestore.io](https://docs.sidestore.io). It needs a computer for the first install, a free Apple ID, and a local VPN (LocalDevVPN / StosVPN) that SideStore uses to refresh apps.
 2. **Enable Developer Mode** on the device: Settings → Privacy & Security → Developer Mode → On, then restart.
-3. **Download the IPA** from [Releases](https://github.com/04pril/laya-iOS/releases/latest) straight onto the iPhone (`Laya-<version>-custom<build>.ipa`).
+3. **Download the IPA** from [Releases](https://github.com/04pril/laya-iOS/releases/latest) straight onto the iPhone (`Laya-<version>.ipa`).
 4. In SideStore open **My Apps**, tap **+**, and pick the downloaded IPA. Sign in with your Apple ID if asked and wait for the install to finish.
 5. Turn the VPN on and open **Laya** from the home screen. If iOS says the developer is untrusted, go to Settings → General → VPN & Device Management and trust your Apple ID.
 

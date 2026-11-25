@@ -4,7 +4,7 @@ on:
   # release.yml attaches the IPA to the draft, so a published release already carries it
   # (draft assets can't be downloaded).
   release:
-    types: [published]
+    types: [published, released, edited]
   workflow_dispatch:
     inputs:
       tag:
@@ -60,7 +60,7 @@ jobs:
           --arg n "$notes" \
           --arg u "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$name" \
           --argjson s "$(stat -c%s app.ipa)" \
-          '.apps[0].versions |= ([{version: $v, buildVersion: $b, date: $d, localizedDescription: $n, downloadURL: $u, size: $s, minOSVersion: $m}] + map(select(.version != $v)) | sort_by(.version | split(".") | map(tonumber)) | reverse)' \
+          '.apps[0].versions |= ([{version: $v, buildVersion: $b, date: $d, localizedDescription: $n, downloadURL: $u, size: $s, minOSVersion: $m}] + map(select((.version != $v or .buildVersion != $b) and .downloadURL != $u)) | sort_by([(.version | split(".") | map(tonumber)), ((.buildVersion // "0") | split(".") | map(tonumber))]) | reverse)' \
           sidestore/source.json > source.tmp
         mv source.tmp sidestore/source.json
         echo "Added $ver ($build) from $tag"

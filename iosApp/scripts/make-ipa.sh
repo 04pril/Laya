@@ -32,7 +32,7 @@ codesign --verify --strict --verbose=2 "$task_app"
 codesign --verify --strict --verbose=2 "$task_app/PlugIns/LayaWidgets.appex"
 task_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$task_app/Info.plist")"
 task_build="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$task_app/Info.plist")"
-task_output="$task_root/build/Laya-${task_version}-custom${task_build}.ipa"
+task_output="$task_root/build/Laya-${task_version}.ipa"
 rm -f "$task_output"
 (cd "$task_stage" && /usr/bin/zip -qry "$task_output" Payload)
 /usr/bin/unzip -tq "$task_output"

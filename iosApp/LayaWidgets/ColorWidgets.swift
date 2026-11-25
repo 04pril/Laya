@@ -7,14 +7,23 @@ import WidgetKit
 struct PosterBackground: View {
     var art: PosterArtwork?
 
-    var body: some View {
-        if let art {
-            Image(uiImage: art.wash)
-                .resizable()
-                .accessibilityHidden(true)
-        } else {
-            Color(uiColor: UIColor(white: 0.45, alpha: 1))
+    // A literal bitmap keeps even the no-art placeholder out of system accent
+    // and appearance colour conversion, just like the album wash.
+    private static let fallbackWash: UIImage = {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { context in
+            context.cgContext.setFillColor(UIColor(white: 0.45, alpha: 1).cgColor)
+            context.cgContext.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
         }
+    }()
+
+    var body: some View {
+        Image(uiImage: art?.wash ?? Self.fallbackWash)
+            .resizable()
+            .layaArtwork()
+            .accessibilityHidden(true)
     }
 }
 
@@ -180,7 +189,12 @@ struct PosterWideWidgetView: View {
 
 private extension View {
     func posterWideBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
-        self.containerBackground(for: .widget) { background() }
+        // The album wash is opaque artwork, not a system container tint.
+        // Drawing it as full-colour content prevents light/dark or clear/tinted
+        // Home Screen appearances from replacing it with a white/black plate.
+        self.background { background().allowsHitTesting(false) }
+            .clipShape(ContainerRelativeShape())
+            .containerBackground(for: .widget) { Color.clear }
     }
 }
 
@@ -229,8 +243,8 @@ private struct PosterControl: View {
 
 extension Image {
     @ViewBuilder func layaArtwork() -> some View {
-        if #available(iOS 18.0, *) { widgetAccentedRenderingMode(.fullColor) }
-        else { self }
+        if #available(iOS 18.0, *) { renderingMode(.original).widgetAccentedRenderingMode(.fullColor) }
+        else { renderingMode(.original) }
     }
 }
 
