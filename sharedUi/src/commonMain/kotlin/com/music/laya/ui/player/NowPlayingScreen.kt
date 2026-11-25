@@ -55,7 +55,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.exclude
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -2445,7 +2447,11 @@ fun NowPlayingScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .windowInsetsPadding(stableStatusBarInsets())
-                        .navigationBarsPadding()
+                        .windowInsetsPadding(
+                            WindowInsets.navigationBars.exclude(
+                                WindowInsets(bottom = PlayerPlatform.host.portraitBottomInsetOverlap),
+                            ),
+                        )
                         // Observe unclaimed taps across the whole Canvas. Buttons and
                         // the compact metadata row consume their own taps first; empty
                         // video above or below them toggles the lower deck either way.
@@ -2724,7 +2730,7 @@ fun NowPlayingScreen(
                         // listened for here at all.
                         if (!lyricsOpen && !queueOpen && !queueDragging && collapseAtRest && controlDeckIsMeasured) {
                             val target = with(density) {
-                                val half = slack
+                                val half = portraitControlSlack(slack, PlayerPlatform.host.portraitArtworkTopReserve)
                                     .coerceAtMost(CONTROL_GAP_SPREAD_MAX * 2)
                                     .toPx()
                                     .div(2f)
@@ -2753,8 +2759,10 @@ fun NowPlayingScreen(
                         // the pair sits centred while the queue is closed — in whatever
                         // the controls couldn't take, which on all but the tallest
                         // screens is nothing.
-                        val groupTop = (maxHeight - fullArt - ART_TITLE_GAP - HEADER_HEIGHT)
-                            .coerceAtLeast(0.dp) / 2
+                        val groupTop = portraitArtworkTop(
+                            remaining = maxHeight - fullArt - ART_TITLE_GAP - HEADER_HEIGHT,
+                            reserve = PlayerPlatform.host.portraitArtworkTopReserve,
+                        )
                         // Functions of the collapse, called at placement and measure
                         // — see [p]. Composition never reads them.
                         fun artSize(): Dp = lerp(fullArt, THUMB_SIZE, p())

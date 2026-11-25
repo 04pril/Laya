@@ -64,9 +64,13 @@ internal object IosAppUiHost : AppUiHost {
 internal object IosPlayerHost : PlayerHost {
     override val settings: PlayerSettingsSource = IosPlayerSettings
 
-    // Match BitChord's safe-area + 4pt bottom edge and 12pt caption gap.
-    override val portraitBottomPadding = 4.dp
-    override val outputCaptionGap = 12.dp
+    // Apple Music's low footer: keep 24pt of a 34pt home-indicator inset,
+    // with the route name tucked directly beneath the output button.
+    override val portraitBottomPadding = 0.dp
+    override val portraitBottomInsetOverlap = 10.dp
+    override val outputCaptionGap = 0.dp
+    override val prominentOutputCaption = true
+    override val portraitArtworkTopReserve = 26.dp
     override val outputCaptionAlignment = Alignment.Center
     override val hasNativeOutputGlyph = true
 

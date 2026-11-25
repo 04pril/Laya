@@ -121,6 +121,11 @@ interface PlayerHost {
 
     /** Space inside the safe area, after the portrait player's output caption. */
     val portraitBottomPadding: Dp get() = 18.dp
+    /** Portion of the bottom inset available to the portrait footer above the home indicator. */
+    val portraitBottomInsetOverlap: Dp get() = 0.dp
+    val prominentOutputCaption: Boolean get() = false
+    /** Allocate this much extra artwork room above the title block before spreading controls. */
+    val portraitArtworkTopReserve: Dp get() = 0.dp
     /** Gap between the bottom action buttons and their output caption. */
     val outputCaptionGap: Dp get() = 18.dp
     val outputCaptionAlignment: Alignment get() = Alignment.TopCenter

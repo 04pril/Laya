@@ -10,6 +10,7 @@ class IosCustomizationTest {
         assertEquals("ko", IosCustomization.language.value)
         assertTrue(IosCustomization.hideParty.value)
         assertTrue(IosCustomization.hideVideo.value)
+        assertTrue(IosCustomization.openPlayer.value)
         assertFalse(IosCustomization.downloadLikes.value)
         IosCustomization.set("hide_video", IosCustomization.hideVideo, false)
         IosCustomization.setLanguage("en")

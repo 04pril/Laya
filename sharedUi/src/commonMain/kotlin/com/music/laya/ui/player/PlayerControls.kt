@@ -1125,21 +1125,23 @@ internal fun OutputCaption(
     val captionModifier = Modifier
         .fillMaxWidth(0.65f)
         .clickable { if (badge.inParty) onOpenMembers() else onOpenOutput() }
+    val prominent = PlayerPlatform.host.prominentOutputCaption
+    val captionStyle = MaterialTheme.typography.labelSmall.copy(
+        fontSize = if (prominent) 13.sp else 11.sp,
+        fontWeight = if (prominent) FontWeight.SemiBold else MaterialTheme.typography.labelSmall.fontWeight,
+        textAlign = TextAlign.Center,
+    )
     if (!badge.inParty && isHiResOutput) {
         ShimmerText(
             text = outputName,
-            style = MaterialTheme.typography.labelSmall.copy(
-                fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-            ),
+            style = captionStyle.copy(fontWeight = FontWeight.SemiBold),
             modifier = captionModifier,
         )
     } else {
         Text(
             text = if (badge.inParty) jamName else outputName,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
-            color = LocalPlayerTint.current.copy(alpha = 0.55f),
+            style = captionStyle,
+            color = LocalPlayerTint.current.copy(alpha = if (prominent) 0.65f else 0.55f),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
