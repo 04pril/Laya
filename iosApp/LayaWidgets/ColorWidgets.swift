@@ -4,7 +4,7 @@ import WidgetKit
 // Poster cards added beside the original three widgets. The wide card follows WidgetPod's medium
 // now-playing widget: Liquid Artwork, curved cover, track/artist and Apple Music glyph.
 
-struct PosterBackground: View {
+struct PosterMediaSurface: View {
     var art: PosterArtwork?
 
     // A literal bitmap keeps even the no-art placeholder out of system accent
@@ -13,6 +13,7 @@ struct PosterBackground: View {
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
         format.opaque = true
+        format.preferredRange = .standard
         return UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1), format: format).image { context in
             context.cgContext.setFillColor(UIColor(white: 0.45, alpha: 1).cgColor)
             context.cgContext.fill(CGRect(x: 0, y: 0, width: 1, height: 1))
@@ -20,7 +21,7 @@ struct PosterBackground: View {
     }()
 
     var body: some View {
-        Image(uiImage: art?.wash ?? Self.fallbackWash)
+        Image(uiImage: art?.surface ?? Self.fallbackWash)
             .resizable()
             .layaArtwork()
             .accessibilityHidden(true)
@@ -37,8 +38,8 @@ struct PosterCover: View {
 
     var body: some View {
         Group {
-            if let art {
-                Image(uiImage: art.cover).resizable().layaArtwork().scaledToFill()
+            if let cover = art?.cover {
+                Image(uiImage: cover).resizable().layaArtwork().scaledToFill()
             } else {
                 Image(systemName: "music.note").resizable().scaledToFit().padding(16).foregroundStyle(.white.opacity(0.7))
             }
@@ -60,7 +61,7 @@ struct PosterNote: View {
             .renderingMode(.template)
             .resizable()
             .scaledToFit()
-            .foregroundStyle(Color(red: 1, green: 0.96, blue: 0.77).opacity(art == nil ? 0.55 : 1))
+            .foregroundStyle(Color(red: 1, green: 0.96, blue: 0.77).opacity(art?.cover == nil ? 0.55 : 1))
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
@@ -77,44 +78,51 @@ struct PosterSquareWidgetView: View {
         let face = PosterFace(snapshot: snapshot)
         GeometryReader { proxy in
             let scale = min(proxy.size.width, proxy.size.height) / 158
-            ZStack(alignment: .topLeading) {
-                PosterCover(art: art, side: 67 * scale, cornerRadius: 10.5 * scale)
-                    .position(x: 49 * scale, y: 49 * scale)
-                Text(face.title)
-                    .font(.system(size: 12.5 * scale, weight: .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
-                    .position(x: 79 * scale, y: 95 * scale)
-                if face.hasTrack, let artist = face.artist {
-                    Text(artist)
-                        .font(.system(size: 12.5 * scale, weight: .regular))
-                        .foregroundStyle(Color.white.opacity(0.88))
-                        .lineLimit(1)
-                        .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
-                        .position(x: 79 * scale, y: 111 * scale)
+            PosterMediaSurface(art: art)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .overlay {
+                    ZStack(alignment: .topLeading) {
+                        if art?.cover == nil {
+                            PosterCover(art: art, side: 67 * scale, cornerRadius: 10.5 * scale)
+                            .position(x: 49 * scale, y: 49 * scale)
+                        }
+                        Text(face.title)
+                            .font(.system(size: 12.5 * scale, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
+                            .position(x: 79 * scale, y: 95 * scale)
+                        if face.hasTrack, let artist = face.artist {
+                            Text(artist)
+                                .font(.system(size: 12.5 * scale, weight: .regular))
+                                .foregroundStyle(Color.white.opacity(0.88))
+                                .lineLimit(1)
+                                .frame(width: 127 * scale, height: 18 * scale, alignment: .leading)
+                                .position(x: 79 * scale, y: 111 * scale)
+                        }
+                        PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
+                                      opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 16.5 * scale,
+                                      height: 36 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 26 * scale, y: 135.5 * scale)
+                        PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
+                                      opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
+                                      height: 36 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 79 * scale, y: 135.5 * scale)
+                        PosterControl(command: "next", symbol: "forward.fill", label: "Next",
+                                      opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 16.5 * scale,
+                                      height: 36 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 132 * scale, y: 135.5 * scale)
+                        PosterNote(art: art, size: 22 * scale)
+                            .position(x: 132 * scale, y: 26 * scale)
+                    }
+                    .frame(width: 158 * scale, height: 158 * scale)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 }
-                PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
-                              opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 16.5 * scale,
-                              height: 36 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 26 * scale, y: 135.5 * scale)
-                PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
-                              opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
-                              height: 36 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 79 * scale, y: 135.5 * scale)
-                PosterControl(command: "next", symbol: "forward.fill", label: "Next",
-                              opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 16.5 * scale,
-                              height: 36 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 132 * scale, y: 135.5 * scale)
-                PosterNote(art: art, size: 22 * scale)
-                    .position(x: 132 * scale, y: 26 * scale)
-            }
-            .frame(width: 158 * scale, height: 158 * scale)
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
         }
         .dynamicTypeSize(.large)
-        .posterWideBackground() { PosterBackground(art: art) }
+        .containerBackground(for: .widget) { Color.clear }
+        .clipShape(ContainerRelativeShape())
         .overlay {
             ContainerRelativeShape()
                 .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
@@ -136,48 +144,55 @@ struct PosterWideWidgetView: View {
         let face = PosterFace(snapshot: snapshot)
         GeometryReader { proxy in
             let scale = min(proxy.size.width / 338, proxy.size.height / 158)
-            ZStack(alignment: .topLeading) {
-                PosterCover(art: art, side: 135.5 * scale)
-                    .position(x: 79.25 * scale, y: 79 * scale)
-                VStack(spacing: 2 * scale) {
-                    Text(face.title)
-                        .font(.system(size: 14 * scale, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
+            PosterMediaSurface(art: art)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                .overlay {
+                    ZStack(alignment: .topLeading) {
+                        if art?.cover == nil {
+                            PosterCover(art: art, side: 135.5 * scale)
+                            .position(x: 79.25 * scale, y: 79 * scale)
+                        }
+                        VStack(spacing: 2 * scale) {
+                            Text(face.title)
+                                .font(.system(size: 14 * scale, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(width: 148 * scale)
+                            if face.hasTrack, let artist = face.artist {
+                                Text(artist)
+                                    .font(.system(size: 13.5 * scale, weight: .regular))
+                                    .foregroundStyle(Color.white.opacity(0.88))
+                                    .lineLimit(1)
+                                    .frame(width: 148 * scale)
+                            }
+                        }
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(width: 148 * scale)
-                    if face.hasTrack, let artist = face.artist {
-                        Text(artist)
-                            .font(.system(size: 13.5 * scale, weight: .regular))
-                            .foregroundStyle(Color.white.opacity(0.88))
-                            .lineLimit(1)
-                            .frame(width: 148 * scale)
+                        .position(x: 243 * scale, y: 64 * scale)
+                        PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
+                                      opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 18 * scale,
+                                      height: 38 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 183 * scale, y: 119 * scale)
+                        PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
+                                      opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
+                                      height: 38 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 243 * scale, y: 119 * scale)
+                        PosterControl(command: "next", symbol: "forward.fill", label: "Next",
+                                      opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 18 * scale,
+                                      height: 38 * scale, fillsWidth: false, weight: .regular)
+                            .position(x: 303 * scale, y: 119 * scale)
+                        PosterNote(art: art, size: 22 * scale)
+                            .position(x: 312 * scale, y: 25 * scale)
                     }
+                    .frame(width: 338 * scale, height: 158 * scale)
+                    .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
                 }
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: 148 * scale)
-                .position(x: 243 * scale, y: 64 * scale)
-                PosterControl(command: "previous", symbol: "backward.fill", label: "Previous",
-                              opacity: face.opacity(.previous), isLive: face.hasTrack, glyph: 18 * scale,
-                              height: 38 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 183 * scale, y: 119 * scale)
-                PosterControl(command: "toggle", symbol: face.toggleSymbol, label: face.toggleLabel,
-                              opacity: face.opacity(.togglePlayPause), isLive: face.hasTrack, glyph: 26 * scale,
-                              height: 38 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 243 * scale, y: 119 * scale)
-                PosterControl(command: "next", symbol: "forward.fill", label: "Next",
-                              opacity: face.opacity(.next), isLive: face.hasTrack, glyph: 18 * scale,
-                              height: 38 * scale, fillsWidth: false, weight: .regular)
-                    .position(x: 303 * scale, y: 119 * scale)
-                PosterNote(art: art, size: 22 * scale)
-                    .position(x: 312 * scale, y: 25 * scale)
-            }
-            .frame(width: 338 * scale, height: 158 * scale)
-            .position(x: proxy.size.width / 2, y: proxy.size.height / 2)
         }
         .dynamicTypeSize(.large)
-        .posterWideBackground() { PosterBackground(art: art) }
+        .containerBackground(for: .widget) { Color.clear }
+        .clipShape(ContainerRelativeShape())
         .overlay {
             ContainerRelativeShape()
                 .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
@@ -187,20 +202,10 @@ struct PosterWideWidgetView: View {
     }
 }
 
-private extension View {
-    func posterWideBackground<Background: View>(@ViewBuilder _ background: () -> Background) -> some View {
-        // The album wash is opaque artwork, not a system container tint.
-        // Drawing it as full-colour content prevents light/dark or clear/tinted
-        // Home Screen appearances from replacing it with a white/black plate.
-        self.background { background().allowsHitTesting(false) }
-            .clipShape(ContainerRelativeShape())
-            .containerBackground(for: .widget) { Color.clear }
-    }
-}
 
 struct PosterArtwork {
-    let cover: UIImage
-    let wash: UIImage
+    let cover: UIImage?
+    let surface: UIImage
 }
 
 struct PosterFace {
@@ -271,6 +276,6 @@ struct ColorSmallWidget: Widget {
 }
 
 private func posterArt(_ entry: LayaEntry) -> PosterArtwork? {
-    guard let cover = entry.art, let wash = entry.face else { return nil }
-    return PosterArtwork(cover: cover, wash: wash)
+    guard let surface = entry.face else { return nil }
+    return PosterArtwork(cover: entry.art, surface: surface)
 }

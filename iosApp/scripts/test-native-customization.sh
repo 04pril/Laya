@@ -37,3 +37,7 @@ codesign --force --sign - --entitlements "$task_tmp/groups.plist" "$task_tmp/gro
 
 xcrun clang -fobjc-arc -framework Foundation "$task_root/iosApp/tests/NowPlayingLaunchTests.m" -o "$task_tmp/nowplaying"
 "$task_tmp/nowplaying"
+
+
+xcrun swiftc "$task_root/iosApp/LayaWidgets/PosterSurfaceRenderer.swift" "$task_root/iosApp/tests/PosterSurfaceRendererTests.swift" -o "$task_tmp/poster-surface"
+"$task_tmp/poster-surface"

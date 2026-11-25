@@ -9,7 +9,7 @@ settings:
   base:
     # A tag build overrides this with the tag's version (.github/workflows/release.yml).
     MARKETING_VERSION: "1.9.6"
-    CURRENT_PROJECT_VERSION: "44"
+    CURRENT_PROJECT_VERSION: "45"
 packages:
   # Vendored: Microsoft deleted microsoft/onnxruntime-swift-package-manager (and
   # onnxruntime itself) in November 2026, so the remote package cannot resolve.
@@ -55,7 +55,7 @@ targets:
         # Alternate icons for the App icon picker (IosAppIcon): Icon Composer documents, so iOS 26 renders them as Liquid Glass.
         ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: "AppIcon-LiquidGlass AppIcon-LiquidGlassDark"
         PRODUCT_BUNDLE_IDENTIFIER: com.music.laya
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         SWIFT_OBJC_BRIDGING_HEADER: iosApp/iosApp-Bridging-Header.h
@@ -100,7 +100,7 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         PRODUCT_NAME: LayaWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.music.laya.widgets
-        TARGETED_DEVICE_FAMILY: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_ENTITLEMENTS: LayaWidgets/LayaWidgets.entitlements
         # Shared/LayaWidgetShared.swift leaves out what an extension may not use.
         SWIFT_ACTIVE_COMPILATION_CONDITIONS: "$(inherited) LAYA_WIDGET_EXTENSION"

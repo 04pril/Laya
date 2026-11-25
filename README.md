@@ -136,7 +136,7 @@ Grab the latest build for your device from the [Releases](https://github.com/imp
 | Windows | `.exe`, `.msi`, portable `.zip` | Run the `.exe` installer, no admin rights needed. The `.zip` runs from any folder. |
 | macOS | `.dmg`, `.pkg` | `arm64` for Apple Silicon, `x64` for Intel. If macOS blocks it, run `xattr -cr /Applications/Laya.app`. |
 | Linux | `.AppImage`, `.deb`, `.rpm` | AppImage: `chmod +x` and run. Debian/Ubuntu: `sudo apt install ./Laya-*.deb`. Fedora: `sudo dnf install ./Laya-*.rpm`. |
-| iPhone | `Laya-<version>.ipa` | Unsigned, install with [SideStore](#install-on-iphone-with-sidestore). Runs on iPad in iPhone compatibility mode. |
+| iPhone | `Laya-<version>.ipa` | Unsigned, install with [SideStore](#install-on-iphone-with-sidestore). Native iPhone and iPad build, with portrait and landscape support. |
 
 </div>
 
