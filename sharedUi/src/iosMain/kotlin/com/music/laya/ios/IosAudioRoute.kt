@@ -124,7 +124,7 @@ internal fun IosAudioPipeline(hazeState: HazeState, onDismiss: () -> Unit) {
     val inRate = stats?.sampleRateHz
     val outRate = outputRateHz()
     val lossless = stats?.isLossless == true
-    PlayerDrawer(hazeState = hazeState, title = "Audio Pipeline", onDismiss = onDismiss) {
+    PlayerDrawer(hazeState = hazeState, title = iosLabel("Audio Pipeline"), onDismiss = onDismiss) {
         Section("Track info") {
             Line("Source", stats?.sourceName ?: none)
             Line("Format", NerdStats.codecLabel(stats?.mimeType) ?: stats?.mimeType ?: none)
@@ -149,7 +149,7 @@ internal fun IosAudioPipeline(hazeState: HazeState, onDismiss: () -> Unit) {
 @Composable
 private fun Section(title: String, content: @Composable () -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 14.dp)) {
-        Text(title.uppercase(), color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.W600)
+        Text(iosLabel(title).uppercase(), color = Color.White, fontSize = 11.5.sp, fontWeight = FontWeight.W600)
         Spacer(Modifier.height(6.dp))
         content()
     }
@@ -158,7 +158,24 @@ private fun Section(title: String, content: @Composable () -> Unit) {
 @Composable
 private fun Line(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
-        Text("$label: ", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
+        Text(iosLabel(label) + ": ", color = Color.White, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall)
         Text(value, color = Color.White.copy(alpha = 0.82f), fontSize = 12.5.sp, style = MaterialTheme.typography.bodySmall)
     }
+}
+
+/** SF Symbols preserves the exact AirPods silhouettes instead of substituting Material icons. */
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@Composable
+internal fun IosOutputGlyph(modifier: Modifier) {
+    val outputs = rememberCurrentOutputs()
+    val symbol = outputs.let { IosNative.host?.outputSymbol() ?: "headphones" }
+    UIKitView(
+        factory = { platform.UIKit.UIImageView().apply {
+            tintColor = UIColor.whiteColor
+            contentMode = platform.UIKit.UIViewContentMode.UIViewContentModeScaleAspectFit
+            userInteractionEnabled = false
+        } },
+        update = { it.image = platform.UIKit.UIImage.systemImageNamed(symbol) },
+        modifier = modifier,
+    )
 }

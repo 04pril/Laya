@@ -56,6 +56,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -224,6 +225,8 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
     val shuffle by AppSettings.shuffleEnabled.collectAsState()
     val autoplay by AppSettings.autoplay.collectAsState()
     val onboardingComplete by AppSettings.onboardingComplete.collectAsState()
+    var proxyWelcomeDone by remember { mutableStateOf(platform.Foundation.NSUserDefaults.standardUserDefaults.boolForKey("ios_proxy_welcome_done")) }
+    LaunchedEffect(Unit) { IosLikedDownloads.install() }
     val swipeNext by AppSettings.swipeToPlayNext.collectAsState()
     val themeMode by AppSettings.themeMode.collectAsState()
     val systemFont by AppSettings.systemFont.collectAsState()
@@ -240,11 +243,23 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
     val focusManager = LocalFocusManager.current
     val playerDock = remember { PlayerDock() }
     val sheetMotion = remember { PlayerSheetMotion(scope, playerDock, { nowPlayingOpen }, { nowPlayingOpen = it }) }
+    fun playSelection(songs: List<Song>, at: Int) {
+        if (com.music.laya.data.listentogether.ListenTogether.state.value.controlsLocked) return
+        val page = (stack.lastOrNull() as? IosPage.Detail)?.page
+        val entries = if (page?.type == BrowseType.PLAYLIST) songs.map {
+            it.copy(playbackSource = page.title, playbackSourceId = page.browseId,
+                playbackSourceType = com.music.laya.data.model.PlaybackSourceType.BROWSE)
+        } else songs
+        player.play(entries, at)
+        if (com.music.laya.data.settings.IosCustomization.openPlayer.value) sheetMotion.open()
+    }
     sheetMotion.windowInfo = LocalWindowInfo.current
     sheetMotion.flingVelocity = with(LocalDensity.current) { PLAYER_PULL_FLING_VELOCITY.toPx() }
     val signedIn by IosAuth.signedIn.collectAsState()
     val account by IosAuth.account.collectAsState()
     var showLogin by remember { mutableStateOf(false) }
+    var showLanguage by remember { mutableStateOf(false) }
+    var loginGate by remember { mutableStateOf(false) }
     // The source being verified, and its row: closed without a session, the switch goes back off.
     var verifying by remember { mutableStateOf<Pair<com.music.laya.data.sources.lossless.LosslessProvider, String>?>(null) }
     val spotifyConnected = AppSettings.spotifySpdcToken.collectAsState().value.isNotBlank()
@@ -377,7 +392,16 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
         val previous = likes[id] ?: LikeStatus.INDIFFERENT
         val next = if (previous == LikeStatus.LIKE) LikeStatus.INDIFFERENT else LikeStatus.LIKE
         LikeState.set(id, next)
-        scope.launch { YtMusicRepository.rate(id, next).onFailure { LikeState.set(id, previous) } }
+        scope.launch {
+            val session = IosAuth.sessionVersion.value
+            YtMusicRepository.rate(id, next).onSuccess {
+                if (next == LikeStatus.LIKE && session == IosAuth.sessionVersion.value) {
+                    val likedSong = player.song?.takeIf { it.videoId == id } ?: menuSong?.takeIf { it.videoId == id }
+                        ?: YtMusicRepository.trackLinks(id).getOrNull()
+                    if (session == IosAuth.sessionVersion.value) likedSong?.let(IosLikedDownloads::liked)
+                }
+            }.onFailure { if (session == IosAuth.sessionVersion.value) LikeState.set(id, previous) }
+        }
     }
     fun isDisliked(id: String) = likes[id] == LikeStatus.DISLIKE
     fun toggleDislike(id: String) {
@@ -972,7 +996,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                                 val picked = songs.getOrNull(i)
                                                 if (picked?.isUnresolvedSpotify != true) {
                                                     val playable = songs.filterNot { it.isUnresolvedSpotify }
-                                                    player.play(playable, playable.indexOf(picked).coerceAtLeast(0))
+                                                    playSelection(playable, playable.indexOf(picked).coerceAtLeast(0))
                                                 }
                                             },
                                             onSongLongPress = { menuSong = it },
@@ -980,7 +1004,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                             onShuffle = { songs ->
                                                 if (songs.isNotEmpty()) {
                                                     AppSettings.setShuffleEnabled(true)
-                                                    player.play(songs, songs.indices.random())
+                                                    playSelection(songs, songs.indices.random())
                                                 }
                                             },
                                             onSectionItemClick = { item ->
@@ -998,7 +1022,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         state = top.shelves,
                                         listState = rememberLazyListState(),
                                         onItemClick = { item ->
-                                            item.toSong()?.let { player.play(listOf(it), 0) } // AutoPlay carries on as the radio
+                                            item.toSong()?.let { playSelection(listOf(it), 0) } // AutoPlay carries on as the radio
                                                 ?: openShelfItem(item)
                                         },
                                         onRetry = { stack = stack.dropLast(1); openMood(top.item) },
@@ -1010,7 +1034,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         onPeriodChange = setReplayPeriod,
                                         onOpenStory = { replayStory = it },
                                         // Android starts a station off the tapped track; AutoPlay carries on as the radio here.
-                                        onPlaySong = { player.play(listOf(it), 0) },
+                                        onPlaySong = { playSelection(listOf(it), 0) },
                                         onOpenArtist = { id, name ->
                                             if (id != null) openDetail(id, name, "Artist", null, BrowseType.ARTIST)
                                             else scope.launch {
@@ -1026,11 +1050,12 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         contentPadding = PaddingValues(top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp, bottom = barHeight),
                                         landingPage = replayLandingPage,
                                     )
+                                    IosPage.Customization -> IosCustomizationScreen(barHeight)
                                     IosPage.Settings -> SettingsScreen(
                                         windowWidth = this@BoxWithConstraints.maxWidth,
                                         signedIn = signedIn,
                                         account = account,
-                                        onSignIn = { showLogin = true },
+                                        onSignIn = { loginGate = true },
                                         onSignOut = { scope.launch { IosAuth.signOut() } },
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
                                         // Opens the account page; Last.fm / Spotify / Discord live behind it on Android (5e).
@@ -1041,6 +1066,19 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         onAccountScrobbling = { stack = stack + IosPage.Account },
                                         onSpotifyCanvasAuth = { stack = stack + IosPage.Account },
                                         onEditSignatureApi = { editingSignatureApi = true },
+                                        onAppLanguage = { showLanguage = true },
+                                        customization = {
+                                            com.music.laya.ui.screens.SettingsGroup(header = iosText("사용자화", "Customization")) {
+                                                com.music.laya.ui.screens.SettingsRow(
+                                                    title = iosText("플레이어 및 편의 설정", "Player & preferences"),
+                                                    subtitle = iosText("가사, 하단 버튼, 다운로드 및 CarPlay", "Lyrics, buttons, downloads and CarPlay"),
+                                                    onClick = { stack = stack + IosPage.Customization })
+                                                com.music.laya.ui.screens.SettingsRow(
+                                                    title = iosText("WireGuard / 프록시", "WireGuard / proxy"),
+                                                    subtitle = "WireGuard · HTTP · HTTPS · SOCKS5",
+                                                    onClick = { IosNative.host?.showProxy() })
+                                            }
+                                        },
                                     )
                                     IosPage.Spotify -> SpotifyLibraryScreen(
                                         onOpenPlaylist = { openDetail(SPOTIFY_PAGE_PREFIX + it.id, it.name, it.owner ?: "Spotify", it.imageUrl, BrowseType.PLAYLIST) },
@@ -1052,7 +1090,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         inviteCode = invite?.code,
                                         inviteServer = invite?.serverUrl,
                                         onInviteHandled = JamInviteLink::handled,
-                                        onSignIn = { showLogin = true },
+                                        onSignIn = { loginGate = true },
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
                                         onEditServer = { editingPartyServer = true },
                                     )
@@ -1066,7 +1104,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     IosPage.Account -> IosAccountPage(
                                         signedIn = signedIn,
                                         account = account,
-                                        onSignIn = { showLogin = true },
+                                        onSignIn = { loginGate = true },
                                         // Removes the login in use; the next one takes over.
                                         onSignOut = { scope.launch { IosAuth.activeAccountId.value?.let { IosAuth.remove(it) } } },
                                         onSpotify = { if (spotifyConnected) stack = stack + IosPage.Spotify else showSpotifyLogin = true },
@@ -1078,7 +1116,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         listState = rememberLazyListState(),
                                         currentSong = song,
                                         isPlaying = player.isPlaying,
-                                        onSongClick = { songs, i -> player.play(songs, i) },
+                                        onSongClick = { songs, i -> playSelection(songs, i) },
                                         onSongLongPress = { menuSong = it },
                                         onSongSwipe = ::swipe,
                                         onRetry = { stack = stack.dropLast(1); openHistory() },
@@ -1087,7 +1125,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     IosPage.Recognize -> com.music.laya.ui.screens.RecognitionScreen(
                                         // The microphone prompt, if one is needed, is asked by the recorder itself.
                                         onListen = { com.music.laya.data.recognition.MusicRecognizer.start() },
-                                        onPlay = { s -> player.play(listOf(s), 0); nowPlayingOpen = true },
+                                        onPlay = { s -> playSelection(listOf(s), 0) },
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
                                         // Control Center controls arrived in iOS 18 (LayaWidgets' RecognizeControl).
                                         shortcut = com.music.laya.ui.screens.RecognitionShortcut.CONTROL_CENTER.takeIf {
@@ -1097,7 +1135,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     is IosPage.ShowAll -> LibraryGridPage(
                                         shelf = top.shelf,
                                         gridState = rememberLazyGridState(),
-                                        onItemClick = { it.toSong()?.let { s -> player.play(listOf(s), 0) } ?: openShelfItem(it) },
+                                        onItemClick = { it.toSong()?.let { s -> playSelection(listOf(s), 0) } ?: openShelfItem(it) },
                                         onItemLongPress = { it.toSong()?.let { s -> menuSong = s } },
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
                                     )
@@ -1114,7 +1152,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     val tapped = item.toSong()
                                     when {
                                         tapped == null -> openShelfItem(item)
-                                        else -> player.play(tracks.ifEmpty { listOf(tapped) },
+                                        else -> playSelection(tracks.ifEmpty { listOf(tapped) },
                                             tracks.indexOfFirst { it.videoId == tapped.videoId }.coerceAtLeast(0))
                                     }
                                 },
@@ -1126,7 +1164,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                 contentPadding = noPadding,
                                 title = "Listen now",
                                 signedIn = signedIn,
-                                onSignIn = { showLogin = true },
+                                onSignIn = { loginGate = true },
                                 currentSong = song,
                                 isPlaying = player.isPlaying,
                                 onLoadMore = ::loadMoreHome,
@@ -1150,7 +1188,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                 onShelfItemClick = {
                                     if (it.browseId == SPOTIFY_BROWSE_ID) stack = stack + IosPage.Spotify
                                     else if (it.browseId == DOWNLOADS_BROWSE_ID) stack = stack + IosPage.Detail(IosDownloads.page())
-                                    else it.toSong()?.let { s -> player.play(listOf(s), 0) } ?: openShelfItem(it)
+                                    else it.toSong()?.let { s -> playSelection(listOf(s), 0) } ?: openShelfItem(it)
                                 },
                                 onShelfItemLongPress = { it.toSong()?.let { s -> menuSong = s } },
                                 onNewPlaylist = {},
@@ -1164,13 +1202,13 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         onOpenReplay = { page -> replayLandingPage = page; stack = stack + IosPage.Replay },
                                     )
                                 },
-                                onSignIn = { showLogin = true },
+                                onSignIn = { loginGate = true },
                                 onRetry = { scope.launch { library = UiState.Loading; loadLibrary() } },
                                 refreshing = libraryRefreshing,
                                 onRefresh = { scope.launch { libraryRefreshing = true; loadLibrary(); libraryRefreshing = false } },
                                 pullState = libraryPull,
                                 contentPadding = noPadding,
-                                onImportSpotifyPlaylist = { if (signedIn) showSpotifyImport = true else showLogin = true },
+                                onImportSpotifyPlaylist = { if (signedIn) showSpotifyImport = true else loginGate = true },
                                 links = listOfNotNull(
                                     LibraryLink(
                                         item = ShelfItem(
@@ -1214,11 +1252,11 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                 onSongClick = { songs, i ->
                                     focusManager.clearFocus()
                                     songs.getOrNull(i)?.let(::recordSong)
-                                    player.play(songs, i)
+                                    playSelection(songs, i)
                                 },
                                 onSongLongPress = { menuSong = it },
                                 onSongSwipe = ::swipe,
-                                onTopResultPlay = { focusManager.clearFocus(); recordSong(it); player.play(listOf(it), 0) },
+                                onTopResultPlay = { focusManager.clearFocus(); recordSong(it); playSelection(listOf(it), 0) },
                                 onTopResultPlaylist = { recordSong(it); menuSong = it },
                                 onBrowseClick = {
                                     focusManager.clearFocus()
@@ -1242,7 +1280,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     focusManager.clearFocus()
                                     val s = e.toSong()
                                     when {
-                                        s != null -> player.play(listOf(s), 0)
+                                        s != null -> playSelection(listOf(s), 0)
                                         e.id.startsWith("q:") -> searchFor(e.title)
                                         else -> openDetail(e.id, e.title, e.subtitle, e.artworkUrl)
                                     }
@@ -1356,6 +1394,10 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         onExpand = sheetMotion::open,
                         dock = playerDock,
                         pull = sheetMotion,
+                        controlsLocked = com.music.laya.data.listentogether.ListenTogether.state.collectAsState().value.controlsLocked,
+                        onDismissPlayer = {
+                            if (player.song?.queueEntryId == song?.queueEntryId) { player.stopAndDismiss(); nowPlayingOpen = false }
+                        },
                         modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged {
                             barHeight = with(density) { it.height.toDp() }
                         },
@@ -1370,11 +1412,20 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             signedIn = signedIn,
                             initialName = "",
                             onNameChosen = {}, // Phase 6: Listen Together nickname
-                            onSignIn = { showLogin = true },
+                            onSignIn = { loginGate = true },
                             onFinish = AppSettings::setOnboardingComplete,
                         )
+                        if (!proxyWelcomeDone) IosProxyWelcome { proxyWelcomeDone = true }
                     }
 
+                    if (loginGate) androidx.compose.material3.AlertDialog(
+                        onDismissRequest = { loginGate = false },
+                        title = { Text(iosText("로그인", "Sign in")) },
+                        text = { TextButton(onClick = { IosNative.host?.showProxy() }) { Text(iosText("WireGuard / 프록시 설정", "WireGuard / proxy settings")) } },
+                        confirmButton = { TextButton(onClick = { if (IosNative.host?.proxyReady() != false) { loginGate = false; showLogin = true } else IosPlayerHost.showMessage(if (com.music.laya.data.settings.IosCustomization.language.value == "ko") "앱을 다시 열어 프록시 설정을 적용하세요." else "Reopen the app to apply proxy settings.") }) { Text(iosText("Google 로그인", "Google sign-in")) } },
+                        dismissButton = { TextButton(onClick = { loginGate = false }) { Text(iosText("취소", "Cancel")) } },
+                    )
+                    if (showLanguage) IosLanguagePicker { showLanguage = false }
                     menuSong?.let { held ->
                         val pinnedOriginals by IosOriginalVersion.pinned.collectAsState()
                         // As Android's menu: a row from search, recents or a feed is looked up as the menu opens.
@@ -1386,6 +1437,14 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         IosSongMenu(
                             song = m,
                             onDismiss = { menuSong = null },
+                            onCollectionChanged = {
+                                scope.launch { loadLibrary() }
+                                val current = stack.lastOrNull() as? IosPage.Detail
+                                if (current != null) scope.launch {
+                                    val updated = loadDetail(current.page)
+                                    stack = stack.map { if (it === current) IosPage.Detail(updated) else it }
+                                }
+                            },
                             onPlayNext = { player.playNext(m) },
                             onAddToQueue = { player.addToQueue(m) },
                             // Pushed over whatever is under the player, which closes so the page is seen.

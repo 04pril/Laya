@@ -151,6 +151,7 @@ import platform.UIKit.UIApplication
 internal sealed interface IosPage {
     class Detail(val page: DetailPage) : IosPage
     class Mood(val item: MoodGenre, val shelves: UiState<List<HomeShelf>>) : IosPage
+    data object Customization : IosPage
     data object Settings : IosPage
     data object Account : IosPage
     data object Spotify : IosPage
@@ -293,6 +294,7 @@ internal fun IosSongMenu(
     onUpgradeQuality: (() -> Unit)? = null,
     /** Greys the row out while the lookup runs; the player's seekbar label says "Upgrading quality". */
     upgradeInProgress: Boolean = false,
+    onCollectionChanged: () -> Unit = {},
 ) {
     @Composable
     fun Action(icon: ImageVector, label: String, onClick: () -> Unit) = ListItem(
@@ -323,27 +325,28 @@ internal fun IosSongMenu(
                 supportingContent = { Text(song.artist, maxLines = 1) },
                 colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
             )
-            onRevertToOriginal?.let { Action(Icons.AutoMirrored.Rounded.Undo, "Revert to original", it) }
+            onRevertToOriginal?.let { Action(Icons.AutoMirrored.Rounded.Undo, iosText("원본 음원으로 되돌리기", "Revert to original"), it) }
             onUpgradeQuality?.let {
                 ListItem(
-                    headlineContent = { Text("Upgrade quality") },
+                    headlineContent = { Text(iosText("음질 업그레이드", "Upgrade quality")) },
                     leadingContent = { Icon(Icons.Rounded.HighQuality, null) },
                     colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     modifier = Modifier.clickable(enabled = !upgradeInProgress) { onDismiss(); it() },
                 )
             }
             liked?.let { Action(if (it) Icons.Rounded.Favorite else Icons.Rounded.FavoriteBorder, if (it) "Remove from liked" else "Like", onToggleLike) }
-            disliked?.let { Action(if (it) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt, if (it) "Undo dislike" else "Dislike", onToggleDislike) }
-            onAddToPlaylist?.let { Action(Icons.AutoMirrored.Rounded.PlaylistAdd, "Add to playlist", it) }
+            disliked?.let { Action(if (it) Icons.Rounded.ThumbDown else Icons.Rounded.ThumbDownOffAlt, if (it) iosText("싫어요 취소", "Undo dislike") else iosText("싫어요", "Dislike"), onToggleDislike) }
+            onAddToPlaylist?.let { Action(Icons.AutoMirrored.Rounded.PlaylistAdd, iosText("플레이리스트에 추가", "Add to playlist"), it) }
+            IosRemovalActions(song, onCollectionChanged, onDismiss)
             DownloadRow(song)
-            Action(Icons.AutoMirrored.Rounded.PlaylistPlay, "Play next", onPlayNext)
-            Action(Icons.AutoMirrored.Rounded.QueueMusic, "Add to queue", onAddToQueue)
-            song.albumId?.let { id -> Action(Icons.Rounded.Album, "Open album") { onOpenAlbum(id) } }
-            song.artistId?.let { id -> Action(Icons.Rounded.Person, "Open artist") { onOpenArtist(id) } }
-            onSongInfo?.let { Action(Icons.Rounded.Info, "Song info", it) }
+            Action(Icons.AutoMirrored.Rounded.PlaylistPlay, iosText("다음에 재생", "Play next"), onPlayNext)
+            Action(Icons.AutoMirrored.Rounded.QueueMusic, iosText("재생 대기 목록에 추가", "Add to queue"), onAddToQueue)
+            song.albumId?.let { id -> Action(Icons.Rounded.Album, iosText("앨범 보기", "Open album")) { onOpenAlbum(id) } }
+            song.artistId?.let { id -> Action(Icons.Rounded.Person, iosText("아티스트 보기", "Open artist")) { onOpenArtist(id) } }
+            onSongInfo?.let { Action(Icons.Rounded.Info, iosText("곡 정보", "Song info"), it) }
             onSleepTimer?.let { Action(Icons.Rounded.Bedtime, sleepStatus?.let { s -> "Sleep timer · $s" } ?: "Sleep timer", it) }
-            Action(Icons.Rounded.Share, "Share") { shareText("https://music.youtube.com/watch?v=${song.videoId}") }
-            onCopyLog?.let { Action(Icons.Rounded.BugReport, "Copy log", it) }
+            Action(Icons.Rounded.Share, iosText("공유", "Share")) { shareText("https://music.youtube.com/watch?v=${song.videoId}") }
+            onCopyLog?.let { Action(Icons.Rounded.BugReport, iosText("로그 복사", "Copy log"), it) }
         }
     }
 }
@@ -364,11 +367,11 @@ private fun DownloadRow(song: Song) {
         modifier = Modifier.clickable(onClick = onClick),
     )
     when (val state = active[id]) {
-        IosDownloadState.Queued -> Row(Icons.Rounded.Downloading, "Queued", "Cancel") { IosDownloads.cancel(id) }
-        is IosDownloadState.Running -> Row(Icons.Rounded.Downloading, "Downloading", if (state.fraction > 0f) "${(state.fraction * 100).toInt()}%" else null) { IosDownloads.cancel(id) }
-        is IosDownloadState.Failed -> Row(Icons.Rounded.ErrorOutline, state.reason, "Retry", MaterialTheme.colorScheme.error) { IosDownloads.enqueue(song) }
-        null -> if (id in saved) Row(Icons.Rounded.DownloadDone, "Saved to Downloads", "Delete") { IosDownloads.delete(id) }
-        else Row(Icons.Rounded.Download, "Download", null) { IosDownloads.enqueue(song) }
+        IosDownloadState.Queued -> Row(Icons.Rounded.Downloading, iosText("대기 중", "Queued"), iosText("취소", "Cancel")) { IosDownloads.cancel(id) }
+        is IosDownloadState.Running -> Row(Icons.Rounded.Downloading, iosText("다운로드 중", "Downloading"), if (state.fraction > 0f) "${(state.fraction * 100).toInt()}%" else null) { IosDownloads.cancel(id) }
+        is IosDownloadState.Failed -> Row(Icons.Rounded.ErrorOutline, state.reason, iosText("다시 시도", "Retry"), MaterialTheme.colorScheme.error) { IosDownloads.enqueue(song) }
+        null -> if (id in saved) Row(Icons.Rounded.DownloadDone, iosText("다운로드됨", "Saved to Downloads"), iosText("삭제", "Delete")) { IosDownloads.delete(id) }
+        else Row(Icons.Rounded.Download, iosText("다운로드", "Download"), null) { IosDownloads.enqueue(song) }
     }
 }
 

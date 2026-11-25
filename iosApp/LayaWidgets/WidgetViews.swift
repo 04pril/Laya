@@ -100,7 +100,7 @@ struct WideMediaView: View {
 
 private func artwork(_ art: UIImage?) -> some View {
     Group {
-        if let art { Image(uiImage: art).resizable() } else { placeholderGradient }
+        if let art { Image(uiImage: art).resizable().layaArtwork() } else { placeholderGradient }
     }
 }
 
@@ -126,7 +126,7 @@ struct PillView: View {
         let k = scale
         HStack(spacing: 0) {
             Group {
-                if let disc { Image(uiImage: disc).resizable().scaledToFill() } else { placeholderGradient }
+                if let disc { Image(uiImage: disc).resizable().layaArtwork().scaledToFill() } else { placeholderGradient }
             }
             .frame(width: 64 * k, height: 64 * k).clipShape(Circle())
             VStack(alignment: .leading, spacing: 0) {
@@ -201,7 +201,7 @@ struct LibraryView: View {
 
     private func cover(_ side: CGFloat) -> some View {
         Group {
-            if let art { Image(uiImage: art).resizable().scaledToFill() } else { Color.white.opacity(0x33 / 255.0) }
+            if let art { Image(uiImage: art).resizable().layaArtwork().scaledToFill() } else { Color.white.opacity(0x33 / 255.0) }
         }
         .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: side * 0.08))
     }
@@ -240,7 +240,7 @@ struct LibraryView: View {
     @ViewBuilder private func tile(_ i: Int, side: CGFloat) -> some View {
         if i < s.liked.count {
             let picture = Group {
-                if let img = tiles[safe: i] ?? nil { Image(uiImage: img).resizable().scaledToFill() } else { Color.white.opacity(0x33 / 255.0) }
+                if let img = tiles[safe: i] ?? nil { Image(uiImage: img).resizable().layaArtwork().scaledToFill() } else { Color.white.opacity(0x33 / 255.0) }
             }
             .frame(width: side, height: side).clipShape(RoundedRectangle(cornerRadius: max(side * 0.08, 4)))
             Link(destination: URL(string: "laya://widget/play?v=\(s.liked[i].id.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")")!) { picture }

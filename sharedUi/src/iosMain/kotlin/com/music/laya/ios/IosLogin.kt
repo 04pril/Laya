@@ -114,6 +114,10 @@ internal fun IosLoginScreen(onClose: () -> Unit) {
     }
     // Forget the previous Google login first, or the page waves straight through as the last account.
     androidx.compose.runtime.LaunchedEffect(Unit) {
+        if (IosNative.host?.configureBrowser(webView.configuration.websiteDataStore) == false) {
+            failed = true
+            return@LaunchedEffect
+        }
         IosAuth.clearGoogleCookies()
         webView.loadRequest(NSURLRequest.requestWithURL(NSURL.URLWithString(LOGIN_URL)!!))
     }

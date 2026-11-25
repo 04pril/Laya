@@ -1,6 +1,8 @@
 package com.music.laya.ui.player
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
+import com.music.laya.ios.IosScreenAwake
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
@@ -17,13 +19,13 @@ internal actual val renderEffectBlurSupported: Boolean = true
 @Composable
 internal actual fun KeepScreenOn(enabled: Boolean) {
     DisposableEffect(enabled) {
-        if (enabled) UIApplication.sharedApplication.idleTimerDisabled = true
-        onDispose { if (enabled) UIApplication.sharedApplication.idleTimerDisabled = false }
+        if (enabled) IosScreenAwake.lyrics(true)
+        onDispose { if (enabled) IosScreenAwake.lyrics(false) }
     }
 }
 
 @Composable
-internal actual fun appLanguageTag(): String = systemLanguageTag()
+internal actual fun appLanguageTag(): String = com.music.laya.data.settings.IosCustomization.language.collectAsState().value
 
 // ponytail: iOS has no back button; the sheet dismisses by swipe. Edge-swipe back is 4b's shell job.
 @Composable

@@ -116,6 +116,14 @@ interface PlayerHost {
     @Composable
     fun RoutePickerOverlay(modifier: Modifier) {}
 
+    val hasNativeOutputGlyph: Boolean get() = false
+
+    @Composable
+    fun OutputGlyph(modifier: Modifier) {}
+
+    @Composable
+    fun QueueSelectionActions(queue: List<Song>, currentIndex: Int, locked: Boolean) {}
+
     /** The negotiated output format, as the pipeline row and the hi-res shine read it. */
     val outputFormat: StateFlow<OutputFormatUi>
 

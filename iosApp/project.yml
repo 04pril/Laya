@@ -2,14 +2,14 @@
 name: iosApp
 options:
   deploymentTarget:
-    iOS: "16.0"
+    iOS: "17.0"
   # Google Cast has no Swift package: fetch the official, checksummed xcframework into Vendor/ (run from iosApp/).
   preGenCommand: sh scripts/fetch-cast-sdk.sh
 settings:
   base:
     # A tag build overrides this with the tag's version (.github/workflows/release.yml).
     MARKETING_VERSION: "1.9.6"
-    CURRENT_PROJECT_VERSION: "37"
+    CURRENT_PROJECT_VERSION: "38"
 packages:
   # Vendored: Microsoft deleted microsoft/onnxruntime-swift-package-manager (and
   # onnxruntime itself) in November 2026, so the remote package cannot resolve.
@@ -59,18 +59,31 @@ targets:
         ENABLE_USER_SCRIPT_SANDBOXING: NO
         FRAMEWORK_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../sharedUi/build/xcode-frameworks/$(CONFIGURATION)/$(SDK_NAME)"
         SWIFT_OBJC_BRIDGING_HEADER: iosApp/iosApp-Bridging-Header.h
-        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../native"
+        HEADER_SEARCH_PATHS: "$(inherited) $(SRCROOT)/../native $(SRCROOT)/iosApp/ProxyNative"
         CLANG_CXX_LANGUAGE_STANDARD: gnu++17
         # The analyzer's DSP is O(n) over a whole track; -O0 would make it crawl in Debug.
         GCC_OPTIMIZATION_LEVEL: "3"
-        OTHER_LDFLAGS: "$(inherited) -framework LayaKit"
+        OTHER_LDFLAGS: "$(inherited) -framework LayaKit -force_load $(SRCROOT)/../WireGuard/build/libytmuwg.a -lresolv -framework Network -framework Security"
     preBuildScripts:
+      - name: Build app-local WireGuard
+        basedOnDependencyAnalysis: false
+        script: |
+          cd "$SRCROOT/../WireGuard"
+          export PATH="/opt/homebrew/bin:$PATH"
+          export SDK_NAME="${PLATFORM_NAME:-iphoneos}"
+          bash build-ios.sh
       - name: Compile Kotlin framework
         basedOnDependencyAnalysis: false
         script: |
           cd "$SRCROOT/.."
           # Xcode passes no JAVA_HOME; Gradle 8.11 can't run on the newest JDKs.
-          if [ -z "$JAVA_HOME" ]; then export JAVA_HOME="$(/usr/libexec/java_home -v 21)"; fi
+          if [ -z "$JAVA_HOME" ]; then
+            if [ -d /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home ]; then
+              export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+            else
+              export JAVA_HOME="$(/usr/libexec/java_home -v 21)"
+            fi
+          fi
           ./gradlew :sharedUi:embedAndSignAppleFrameworkForXcode
 
   # The home-screen widgets (Android's four), WidgetKit. iOS 17: interactive buttons start there.

@@ -900,6 +900,20 @@ private fun OutputPartyPill(
     videoToggle: VideoToggle? = null,
 ) {
     val badge = rememberPartyBadge()
+    val simple by com.music.laya.data.settings.IosCustomization.simpleFooter.collectAsStateWithLifecycle()
+    val hideParty by com.music.laya.data.settings.IosCustomization.hideParty.collectAsStateWithLifecycle()
+    val hideVideo by com.music.laya.data.settings.IosCustomization.hideVideo.collectAsStateWithLifecycle()
+    if (simple) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(48.dp).clickable(onClick = onOutput), contentAlignment = Alignment.Center) {
+                PlayerPlatform.host.OutputGlyph(Modifier.size(26.dp))
+                if (PlayerPlatform.host.hasRoutePicker) PlayerPlatform.host.RoutePickerOverlay(Modifier.matchParentSize())
+            }
+            if (!hideParty) BottomGlyph(icon = Icons.Rounded.Person, contentDescription = stringResource(Res.string.listen_together_open), onClick = if (badge.inParty) onOpenMembers else onParty, highlighted = badge.inParty)
+            if (!hideVideo && videoToggle != null) BottomGlyph(icon = if (videoToggle.video) LayaIcons.MusicNote else Icons.Rounded.Videocam, contentDescription = stringResource(if (videoToggle.video) Res.string.switch_to_audio else Res.string.switch_to_video), onClick = videoToggle.onToggle)
+        }
+        return
+    }
     Pill {
         PillSegment(
             icon = Icons.Rounded.Headphones,
@@ -907,6 +921,7 @@ private fun OutputPartyPill(
             contentDescription = stringResource(Res.string.audio_output),
             onClick = onOutput,
         )
+        if (!hideParty) {
         PillDivider()
         PillSegment(
             // Person rather than Groups: the three-person glyph is drawn half
@@ -929,11 +944,12 @@ private fun OutputPartyPill(
             highlighted = badge.inParty,
             trailingLabel = badge.members.takeIf { badge.inParty }?.toString(),
         )
+        }
         // Same track, the other cut: the music video, or back to the song.
         // Beside the party segment, the other "how is this being heard"
         // choice. It shows what tapping it gives you, the way the lyrics and
         // queue glyphs do, and spins while that cut is found and lined up.
-        if (videoToggle != null) {
+        if (videoToggle != null && !hideVideo) {
             PillDivider()
             PillSegment(
                 icon = if (videoToggle.video) LayaIcons.MusicNote else Icons.Rounded.Videocam,

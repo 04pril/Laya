@@ -342,6 +342,11 @@ jobs:
 
       - run: chmod +x gradlew
 
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: WireGuard/go.mod
+          cache-dependency-path: WireGuard/go.sum
+
       - name: Generate Xcode project
         run: |
           xcodebuild -version

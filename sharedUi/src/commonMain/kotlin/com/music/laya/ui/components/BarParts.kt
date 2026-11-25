@@ -199,10 +199,12 @@ fun Modifier.miniPlayerGestures(
     /** Listening in a party whose host holds the controls. Swipes say so instead of skipping. */
     locked: Boolean = false,
     onBlocked: () -> Unit = {},
+    onDismiss: (() -> Unit)? = null,
 ): Modifier {
     // Playback state updates can recompose the bar while a finger is down.
     // Keep the gesture coroutine alive through those updates while still
     // dispatching to the latest controller callbacks when the drag finishes.
+    val currentDismiss by rememberUpdatedState(onDismiss)
     val currentPull by rememberUpdatedState(pull)
     val currentOnNext by rememberUpdatedState(onNext)
     val currentOnPrevious by rememberUpdatedState(onPrevious)
@@ -219,10 +221,13 @@ fun Modifier.miniPlayerGestures(
         val maxVelocity = viewConfiguration.maximumFlingVelocity
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
+            settle[0]?.cancel()
+            val dismissAtStart = currentDismiss
             val pointer = down.id
             // Up to the slop: which way this is heading, or nothing at all.
             var start: PointerInputChange? = null
             var vertical = false
+            var dismissing = false
             while (start == null) {
                 val change = awaitPointerEvent().changes.firstOrNull { it.id == pointer }
                     ?: return@awaitEachGesture
@@ -234,13 +239,36 @@ fun Modifier.miniPlayerGestures(
                 // Downwards has nothing to do on the bar, and nor has a pull
                 // with no player to pull: left as they always were, a drag that
                 // ends inside the bar still counts as its tap.
-                if (!vertical && abs(moved.x) < abs(moved.y)) return@awaitEachGesture
+                dismissing = moved.y > abs(moved.x) * PULL_BIAS && currentDismiss != null
+                if (!vertical && !dismissing && abs(moved.x) < abs(moved.y)) return@awaitEachGesture
                 if (vertical && currentPull == null) return@awaitEachGesture
                 change.consume()
                 start = change
             }
             val slopped = start
 
+            if (dismissing) {
+                var dy = slopped.position.y - down.position.y
+                var dx = slopped.position.x - down.position.x
+                val finished = drag(pointer) { change ->
+                    val delta = change.positionChange()
+                    dy += delta.y; dx += delta.x
+                    change.consume()
+                    lift.floatValue = -dy.coerceIn(0f, liftEase) * 0.55f
+                }
+                val accepted = finished && dy >= 36.dp.toPx() && dy > abs(dx) * PULL_BIAS
+                if (accepted && currentLocked) currentOnBlocked()
+                val finishDismiss = accepted && !currentLocked
+                val from = lift.floatValue
+                settle[0] = scope.launch {
+                    try {
+                        animate(initialValue = from, targetValue = if (finishDismiss) -liftEase else 0f,
+                            animationSpec = androidx.compose.animation.core.tween(180)) { value, _ -> lift.floatValue = value }
+                        if (finishDismiss && !currentLocked) dismissAtStart?.invoke()
+                    } finally { lift.floatValue = 0f }
+                }
+                return@awaitEachGesture
+            }
             if (!vertical) {
                 var dragged = slopped.position.x - down.position.x
                 // Read before consuming: a consumed change reports no movement.
@@ -294,7 +322,14 @@ fun Modifier.miniPlayerGestures(
                 ) { value, _ -> lift.floatValue = value }
             }
         }
-    }.graphicsLayer { translationY = -lift.floatValue }
+    }.graphicsLayer {
+        translationY = -lift.floatValue
+        if (lift.floatValue < 0f) {
+            alpha = (1f + lift.floatValue / PULL_LIFT_EASE.toPx()).coerceIn(0f, 1f)
+            scaleX = 1f - (1f - alpha) * 0.08f
+            scaleY = scaleX
+        }
+    }
 }
 
 /**

@@ -7,6 +7,8 @@ import WidgetKit
 @main
 struct LayaWidgetBundle: WidgetBundle {
     var body: some Widget {
+        ColorMediumWidget()
+        ColorSmallWidget()
         NowPlayingWidget()
         PillWidget()
         LibraryWidget()
@@ -200,7 +202,7 @@ struct LibraryWidget: Widget {
 }
 
 @ViewBuilder private func faceView(_ face: UIImage?) -> some View {
-    if let face { Image(uiImage: face).resizable() } else { placeholderGradient }
+    if let face { Image(uiImage: face).resizable().layaArtwork() } else { placeholderGradient }
 }
 
 extension View {

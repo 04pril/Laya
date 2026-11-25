@@ -51,6 +51,7 @@ import com.music.laya.playback.QueueTimeline
 import com.music.laya.playback.QueueTimeline.asQueueEntry
 import com.music.laya.ui.player.RepeatModes
 import kotlin.concurrent.Volatile
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -143,7 +144,8 @@ private class KaraokeSource(val url: String, val headers: Map<String, String>, v
  */
 class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineScope) : AudioEngineListener {
     companion object {
-        private var instance: IosPlayer? = null
+        internal var instance: IosPlayer? = null
+            private set
 
         /**
          * The process's one player. A widget's AudioPlaybackIntent can start the app in the background, where
@@ -419,6 +421,48 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         queueChanged()
     }
 
+    private var dismissalGeneration = 0
+    private var removal by mutableStateOf<com.music.laya.playback.QueueBatchRemoval?>(null)
+    val canUndoRemoval: Boolean get() = removal?.canUndo(queue, index) == true
+
+    fun removeUpcoming(ids: Set<String>) = intent {
+        val change = com.music.laya.playback.QueueBatchRemoval.create(queue, index, ids) ?: return@intent
+        queue = change.after
+        removal = change
+        queueChanged()
+    }
+
+    fun undoRemoval() = intent {
+        val undo = removal ?: return@intent
+        if (!canUndoRemoval) { removal = null; return@intent }
+        queue = undo.before
+        index = queue.indexOfFirst { it.queueEntryId == undo.currentId }
+        removal = null
+        queueChanged()
+    }
+
+    fun stopAndDismiss() = intent {
+        dismissalGeneration++
+        castReconcileJob?.cancel(); castLoading = null
+        versionSwitching = false; upgrading = false; playingFromSource = false; handing = false
+        startJob?.cancel(); nextJob?.cancel(); upgradeJob?.cancel(); autoplayJob?.cancel(); alignJob?.cancel()
+        IosLyricsAlign.offsetMs.value = 0
+        playingOpened = null
+        queuedOpened = null; versionOpened.clear(); offSite.clear(); streams.clear()
+        cancelSleep()
+        IosMusicVideo.stopAndDismiss()
+        if (IosCast.active) IosCast.native?.pause()
+        engine.stop()
+        ListeningRecorder.onStopped()
+        PlaybackTracker.onTrackChanged(trackedSec); trackedSec = 0
+        queue = emptyList(); index = -1; preloaded = -1; pendingMs = null
+        isPlaying = false; isLoading = false; durationMs = 0; position.report(0)
+        removal = null
+        Karaoke.trackChanged(null)
+        IosPlayerStore.clear()
+        engine.dismissNowPlaying()
+    }
+
     fun removeAt(i: Int) = intent {
         if (i !in queue.indices || i == index) return@intent
         queue = queue.toMutableList().apply { removeAt(i) }
@@ -630,6 +674,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     private suspend fun resolveInto(song: Song, next: Boolean) = withContext(ioDispatcher) {
         val o = open(song, patient = next)
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         hand(song, o, next)
         if (!next && o.pending != null) watchUpgrade(song, o)
     }
@@ -737,6 +782,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         val s = song ?: return onDone(false)
         if (versionSwitching || target.videoId == s.videoId) return onDone(false)
         versionSwitching = true
+        val generation = dismissalGeneration
         val at = index
         val swapped = target.copy(
             queueTier = s.queueTier,
@@ -750,7 +796,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
             val ok = try {
                 playingOpened?.takeIf { it.first == s.videoId }?.let { versionOpened[s.videoId] = it.second }
                 val o = versionOpened[swapped.videoId] ?: withContext(ioDispatcher) { youtube(swapped.videoId) }
-                if (song?.videoId != s.videoId || index != at) return@launch onDone(false)
+                if (dismissalGeneration != generation || song?.videoId != s.videoId || index != at) return@launch onDone(false)
                 PlaybackTracker.onVersionSwapped(s, swapped)
                 queue = queue.toMutableList().also { it[at] = swapped }
                 hand(swapped, o, next = false, swap = true)
@@ -764,7 +810,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
                 TrackLog.w("Laya", "iOS version switch failed for ${s.title}: ${e.message}", about = s.videoId)
                 false
             } finally {
-                versionSwitching = false
+                if (dismissalGeneration == generation) versionSwitching = false
             }
             onDone(ok)
         }
@@ -1145,9 +1191,10 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         }
         TrackLog.w("Laya", "playback broke ($reason); retry $recoverCount at ${at} ms", about = failed.videoId)
         isLoading = true
+        val failedEntry = song?.queueEntryId
         scope.launch {
             delay(recoverCount * 1000L)
-            if (song?.videoId == failed.videoId) start(index, at)
+            if (song?.queueEntryId == failedEntry && song?.videoId == failed.videoId) start(index, at)
         }
     }
 

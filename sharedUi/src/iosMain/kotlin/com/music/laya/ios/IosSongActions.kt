@@ -10,8 +10,9 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -47,17 +48,17 @@ private fun PickRow(label: String, onClick: () -> Unit) = ListItem(
 internal fun IosSleepTimerDialog(player: IosPlayer, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Sleep timer") },
+        title = { Text(iosText("취침 타이머", "Sleep timer")) },
         text = {
             Column {
                 listOf(15, 30, 45, 60).forEach { m ->
-                    PickRow("$m minutes" + if (player.sleepMinutes == m) "  ✓" else "") { player.startSleep(m); onDismiss() }
+                    PickRow(iosText("${m}분", "$m minutes") + if (player.sleepMinutes == m) "  ✓" else "") { player.startSleep(m); onDismiss() }
                 }
-                PickRow("End of track" + if (player.sleepAfterTrack) "  ✓" else "") { player.startSleepAfterTrack(); onDismiss() }
-                if (player.sleepMinutes != null || player.sleepAfterTrack) PickRow("Turn off") { player.cancelSleep(); onDismiss() }
+                PickRow(iosText("이 곡이 끝나면", "End of track") + if (player.sleepAfterTrack) "  ✓" else "") { player.startSleepAfterTrack(); onDismiss() }
+                if (player.sleepMinutes != null || player.sleepAfterTrack) PickRow(iosText("끄기", "Turn off")) { player.cancelSleep(); onDismiss() }
             }
         },
-        confirmButton = { TextButton(onDismiss) { Text("Done") } },
+        confirmButton = { TextButton(onDismiss) { Text(iosText("완료", "Done")) } },
     )
 }
 
@@ -67,12 +68,12 @@ internal fun IosSongInfoDialog(song: Song, onDismiss: () -> Unit) {
     val info by produceState<SongInfo?>(null, song) { value = SongInfoRepository.load(song) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Song info") },
+        title = { Text(iosText("곡 정보", "Song info")) },
         text = {
             Column {
                 Text(song.title)
                 Text(song.artist)
-                if (info == null) Text("Loading…")
+                if (info == null) Text(iosText("불러오는 중…", "Loading…"))
                 else listOf(
                     "Album" to (info?.album ?: song.albumName),
                     "Release date" to (info?.releaseDate ?: info?.releaseYear),
@@ -81,14 +82,14 @@ internal fun IosSongInfoDialog(song: Song, onDismiss: () -> Unit) {
                     "Comments" to info?.comments,
                 ).forEach { (k, v) ->
                     ListItem(
-                        headlineContent = { Text(k) },
+                        headlineContent = { Text(iosLabel(k)) },
                         trailingContent = { Text(v ?: "—") },
                         colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     )
                 }
             }
         },
-        confirmButton = { TextButton(onDismiss) { Text("Done") } },
+        confirmButton = { TextButton(onDismiss) { Text(iosText("완료", "Done")) } },
     )
 }
 
@@ -96,27 +97,29 @@ internal fun IosSongInfoDialog(song: Song, onDismiss: () -> Unit) {
 @Composable
 internal fun IosPlaylistPicker(song: Song, onDismiss: () -> Unit, notify: (String) -> Unit) {
     val scope = rememberCoroutineScope()
+    var query by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
     val playlists by produceState<List<UserPlaylist>?>(null) { value = YtMusicRepository.userPlaylists().getOrDefault(emptyList()) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add to playlist") },
+        title = { Text(iosText("플레이리스트에 추가", "Add to playlist")) },
         text = {
             Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
-                val list = playlists
-                if (list == null) Text("Loading…") else if (list.isEmpty()) Text("No playlists")
+                androidx.compose.material3.OutlinedTextField(query, { query = it }, label = { Text(iosText("플레이리스트 검색", "Search playlists")) }, singleLine = true)
+                val list = playlists?.filter { query.isBlank() || it.title.contains(query.trim(), ignoreCase = true) }
+                if (list == null) Text(iosText("불러오는 중…", "Loading…")) else if (list.isEmpty()) Text(iosText("검색 결과 없음", "No playlists"))
                 list?.forEach { p ->
                     PickRow(p.title) {
                         onDismiss()
                         scope.launch {
                             YtMusicRepository.addToPlaylist(p.playlistId, listOf(song.videoId))
-                                .onSuccess { notify("Added to ${p.title}") }
-                                .onFailure { notify("Couldn't add to ${p.title}") }
+                                .onSuccess { notify(if (com.music.laya.data.settings.IosCustomization.language.value == "ko") "${p.title}에 추가했습니다" else "Added to ${p.title}") }
+                                .onFailure { notify(if (com.music.laya.data.settings.IosCustomization.language.value == "ko") "${p.title}에 추가하지 못했습니다" else "Couldn't add to ${p.title}") }
                         }
                     }
                 }
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onDismiss) { Text(iosText("취소", "Cancel")) } },
     )
 }

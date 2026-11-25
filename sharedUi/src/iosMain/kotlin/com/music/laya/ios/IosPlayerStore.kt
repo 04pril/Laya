@@ -21,7 +21,7 @@ internal object IosPlayerStore {
         val duration: String? = null, val album: String? = null, val albumId: String? = null,
         val artistId: String? = null, val explicit: Boolean? = null, val video: Boolean = false,
         val tier: String = "CONTEXT", val entryId: String? = null, val radio: String? = null,
-        val source: String? = null, val sourceType: String? = null, val sourceId: String? = null,
+        val setVideoId: String? = null, val source: String? = null, val sourceType: String? = null, val sourceId: String? = null,
     )
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -37,7 +37,7 @@ internal object IosPlayerStore {
             Track(
                 it.videoId, it.title, it.artist, it.thumbnailUrl, it.durationText, it.albumName, it.albumId,
                 it.artistId, it.isExplicit, it.isVideo, it.queueTier.name, it.queueEntryId, it.radioName,
-                it.playbackSource, it.playbackSourceType?.name, it.playbackSourceId,
+                it.setVideoId, it.playbackSource, it.playbackSourceType?.name, it.playbackSourceId,
             )
         }
         d.setObject(json.encodeToString(tracks), "ios_last_queue")
@@ -60,7 +60,7 @@ internal object IosPlayerStore {
             Song(
                 videoId = it.id, title = it.title, artist = it.artist, thumbnailUrl = it.artwork,
                 durationText = it.duration, albumName = it.album, albumId = it.albumId, artistId = it.artistId,
-                isExplicit = it.explicit, isVideo = it.video,
+                isExplicit = it.explicit, isVideo = it.video, setVideoId = it.setVideoId,
                 queueTier = runCatching { QueueTier.valueOf(it.tier) }.getOrDefault(QueueTier.CONTEXT),
                 queueEntryId = it.entryId, radioName = it.radio, playbackSource = it.source,
                 playbackSourceType = it.sourceType?.let { s -> runCatching { PlaybackSourceType.valueOf(s) }.getOrNull() },

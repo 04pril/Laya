@@ -14,3 +14,7 @@ Placeholder for component-specific technical documentation and implementation no
 
 ## Future Documentation
 Placeholder for future project and technical documentation.
+
+## iOS customization
+
+The app-local WireGuard/proxy engine and editor, signed App Group parsing, and widget compatibility adaptations are ported from [04pril/BitChord-iOS](https://github.com/04pril/BitChord-iOS). Proxy onboarding follows [04pril/BitChord-Android](https://github.com/04pril/BitChord-Android). WireGuard dependency notices are in `WireGuard/THIRD_PARTY_LICENSES.txt`.

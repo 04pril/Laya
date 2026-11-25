@@ -1,5 +1,7 @@
 package com.music.laya.ios
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.key
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -73,6 +75,10 @@ fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: 
             override val lastfmSecret = LASTFM_SECRET
         },
     )
+    com.music.laya.data.settings.IosCustomization.install(NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults),
+        if (com.music.laya.platform.systemLanguageTag().startsWith("ko")) "ko" else "en")
+    IosNative.host?.applyLanguage(com.music.laya.data.settings.IosCustomization.language.value)
+    IosNative.host?.setCarScreenOn(com.music.laya.data.settings.IosCustomization.keepCarScreenOn.value)
     // Falls back to the built-in signature server when a saved one is down.
     kotlinx.coroutines.MainScope().launch { com.music.laya.data.canvas.ArtistSignatureRepository.refreshServer() }
     // The device's own listening record (Replay), under Application Support the way Android keeps it in filesDir.
@@ -111,5 +117,8 @@ fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: 
     )
     // Not opaque: an opaque Metal layer clears to white wherever nothing is drawn, which shows as a white band
     // while the canvas resizes on rotation. Transparent lets the host's black background show instead.
-    return ComposeUIViewController(configure = { opaque = false }) { LayaIosApp(engine, onStatusBarLight) }
+    return ComposeUIViewController(configure = { opaque = false }) {
+        val language = com.music.laya.data.settings.IosCustomization.language.collectAsState().value
+        key(language) { LayaIosApp(engine, onStatusBarLight) }
+    }
 }

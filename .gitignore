@@ -64,3 +64,5 @@ iosApp/Vendor/*
 
 # graphify (local knowledge graph, rebuild with `graphify update .`)
 graphify-out/
+
+/WireGuard/build/

@@ -315,6 +315,11 @@ internal object IosMusicVideo {
         pipBridge = null
     }
 
+    fun stopAndDismiss() {
+        forceClosePictureInPicture()
+        unload()
+    }
+
     private fun unload() {
         loadJob?.cancel()
         loadJob = null

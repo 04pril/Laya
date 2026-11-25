@@ -274,6 +274,7 @@ internal fun InlineQueue(
     }
 
     Column(modifier.fillMaxWidth()) {
+        PlayerPlatform.host.QueueSelectionActions(queue, currentIndex, controlsLocked)
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,

@@ -273,6 +273,15 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         pausedByInterruption = false
     }
 
+    func dismissNowPlaying() {
+        artworkTask?.cancel()
+        artworkTask = nil
+        nowPlaying.removeAll()
+        nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nil
+        nowPlayingSession.nowPlayingInfoCenter.playbackState = .stopped
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+    }
+
     /// Play at the chosen speed (play() alone would reset the rate to 1).
     private func go() {
         player.play()

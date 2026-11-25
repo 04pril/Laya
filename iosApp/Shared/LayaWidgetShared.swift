@@ -33,16 +33,13 @@ struct LayaWidgetSnapshot: Codable, Equatable {
 /// record the new name in Info.plist (ALTAppGroups), so that is asked first.
 enum LayaWidgetStore {
     static let defaultGroup = "group.com.music.laya"
-    static let kinds = ["LayaNowPlaying", "LayaNowPlayingPill", "LayaNowPlayingLibrary"]
+    static let kinds = ["LayaNowPlaying", "LayaNowPlayingPill", "LayaNowPlayingLibrary", "LayaColorMedium", "LayaColorSmall"]
 
     static var directory: URL? {
-        let groups = (Bundle.main.object(forInfoDictionaryKey: "ALTAppGroups") as? [String] ?? []) + [defaultGroup]
-        for group in groups {
-            if let url = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) {
-                let dir = url.appendingPathComponent("widget", isDirectory: true)
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                return dir
-            }
+        if let container = SharedAppGroup.containerURL {
+            let dir = container.appendingPathComponent("widget", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            return dir
         }
         return nil
     }

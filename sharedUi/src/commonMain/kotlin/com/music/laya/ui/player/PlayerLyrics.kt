@@ -77,6 +77,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -531,22 +532,26 @@ internal fun LyricsStatusWithChange(
     onStatusClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    val showSource by com.music.laya.data.settings.IosCustomization.showLyricsSource.collectAsState()
+    val showChange by com.music.laya.data.settings.IosCustomization.showLyricsChange.collectAsState()
+    val sourceStatus = LyricsSource.offered.any { status.contains(it.label) }
+    val drawStatus = showSource || !sourceStatus
     val haptics = rememberHaptics()
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
+        if (drawStatus) Text(
             text = status,
             style = MaterialTheme.typography.titleMedium,
             color = LocalPlayerTint.current.copy(alpha = 0.55f),
-            textDecoration = if (onStatusClick != null) TextDecoration.Underline else null,
+            textDecoration = if (onStatusClick != null && showChange) TextDecoration.Underline else null,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .weight(1f, fill = false)
                 .then(
-                    if (onStatusClick != null) {
+                    if (onStatusClick != null && showChange) {
                         Modifier.clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
@@ -559,6 +564,11 @@ internal fun LyricsStatusWithChange(
                     },
                 ),
         )
+        if (!drawStatus && showChange && onStatusClick != null) {
+            androidx.compose.material3.TextButton(onClick = onStatusClick) {
+                Text(if (com.music.laya.data.settings.IosCustomization.language.collectAsState().value == "ko") "가사 변경" else "Change lyrics", color = LocalPlayerTint.current)
+            }
+        }
     }
 }
 
@@ -907,8 +917,8 @@ private fun SweptLyricLine(
         contentAlignment = if (right) AbsoluteAlignment.TopRight else AbsoluteAlignment.TopLeft,
     ) {
         Text(
-            text = line.text,
-            style = style,
+            text = customizedLyricText(line.text, style.fontSize.value),
+            style = customizedLyricStyle(style),
             color = color.copy(alpha = dimAlpha),
             maxLines = maxLines,
             overflow = overflow,
@@ -917,8 +927,8 @@ private fun SweptLyricLine(
         )
         if (glowAlpha > 0.01f) {
             Text(
-                text = line.text,
-                style = style,
+                text = customizedLyricText(line.text, style.fontSize.value),
+                style = customizedLyricStyle(style),
                 color = color,
                 maxLines = maxLines,
                 overflow = overflow,
@@ -949,8 +959,8 @@ private fun SweptLyricLine(
             )
         }
         Text(
-            text = line.text,
-            style = style,
+            text = customizedLyricText(line.text, style.fontSize.value),
+            style = customizedLyricStyle(style),
             color = color,
             maxLines = maxLines,
             overflow = overflow,
@@ -2878,8 +2888,8 @@ private fun PanelVoice(
         )
         var layout by remember(line.text) { mutableStateOf<TextLayoutResult?>(null) }
         Text(
-            text = line.text,
-            style = style,
+            text = customizedLyricText(line.text, style.fontSize.value),
+            style = customizedLyricStyle(style),
             color = color.copy(alpha = lit),
             onTextLayout = { layout = it },
             modifier = modifier.lyricParticles(layout, translationProgress, room).padding(room),

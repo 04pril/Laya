@@ -31,6 +31,7 @@ interface AudioEngine {
     fun resume()
     fun seekTo(positionMs: Long)
     fun stop()
+    fun dismissNowPlaying()
 
     /** Playback rate with pitch preserved. */
     fun setSpeed(speed: Float)

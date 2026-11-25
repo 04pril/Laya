@@ -10,7 +10,10 @@ struct iOSApp: App {
     /// Google Cast; created at launch because the SDK wants its context set up early.
     static let castNative = CastNativeImpl()
 
+    private static let customization = CustomizationNative()
+
     init() {
+        IosNative.shared.host = Self.customization
         IosKaraoke.shared.native = KaraokeNativeImpl()
         IosAutomix.shared.native = AutomixNativeImpl()
         _ = iOSApp.castNative // statics are lazy

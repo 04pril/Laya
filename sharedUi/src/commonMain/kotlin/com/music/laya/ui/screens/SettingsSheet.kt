@@ -170,6 +170,7 @@ fun SettingsScreen(
     onSpotifyCanvasAuth: (() -> Unit)? = null,
     onAppLanguage: (() -> Unit)? = null,
     onEditSignatureApi: (() -> Unit)? = null,
+    customization: (@Composable () -> Unit)? = null,
 ) {
     val host = SettingsExtras.host
     val engineOptions = host.hasEngineOptions
@@ -319,6 +320,7 @@ fun SettingsScreen(
             },
         )
 
+        if (searchQuery.isBlank()) customization?.invoke()
         SearchableSettingsGroup(search) {
             if (onAccountScrobbling != null) {
                 val accountTitle = stringResource(Res.string.account_integrations)

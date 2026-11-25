@@ -44,6 +44,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import com.music.laya.data.settings.IosCustomization
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -109,6 +113,7 @@ fun GlassNavBar(
     dock: PlayerDock? = null,
     /** Dragging the bar's player up into the full player. */
     pull: MiniPlayerPull? = null,
+    onDismissPlayer: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     // Held for the same reason [tabs] is. The glass factory below closes over
@@ -162,6 +167,7 @@ fun GlassNavBar(
                     onBlockedControl = onBlockedControl,
                     dock = dock,
                     pull = pull,
+                    onDismissPlayer = onDismissPlayer,
                     modifier = accessoryModifier.then(glassSurface()),
                 )
             }
@@ -182,6 +188,7 @@ fun GlassNavBar(
                     onBlockedControl = onBlockedControl,
                     dock = dock,
                     pull = pull,
+                    onDismissPlayer = onDismissPlayer,
                     modifier = accessoryModifier.fillMaxWidth().then(glassSurface()),
                 )
             }
@@ -298,6 +305,7 @@ private fun GlassNowPlaying(
     onBlockedControl: () -> Unit,
     dock: PlayerDock?,
     pull: MiniPlayerPull?,
+    onDismissPlayer: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     val haptics = rememberHaptics()
@@ -333,6 +341,10 @@ private fun GlassNowPlaying(
         // in, and a pull started in the strip above or below it went nowhere —
         // on a bar only 45dp tall to begin with.
         modifier = Modifier
+            .semantics {
+                if (onDismissPlayer != null && !controlsLocked) customActions = listOf(
+                    CustomAccessibilityAction(if (IosCustomization.language.value == "ko") "재생 종료" else "Stop playback") { onDismissPlayer(); true })
+            }
             // Outside the press scale, which it lifts along with everything else.
             .miniPlayerGestures(
                 pull = pull,
@@ -346,6 +358,7 @@ private fun GlassNowPlaying(
                 },
                 locked = controlsLocked,
                 onBlocked = onBlockedControl,
+                onDismiss = onDismissPlayer,
             )
             .graphicsLayer {
                 scaleX = pressScale

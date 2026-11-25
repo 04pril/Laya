@@ -30,6 +30,8 @@ import kotlinx.coroutines.flow.stateIn
 
 /** Everything not overridden is hidden on iOS; Phase 5/6 fill in accounts, Listen Together, downloads. */
 internal object IosSettingsHost : SettingsHost {
+    @Composable
+    override fun appLanguageName(): String = if (com.music.laya.data.settings.IosCustomization.language.collectAsState().value == "ko") "한국어" else "English"
     override val hasEngineOptions = false // the AVPlayer engine has none of these yet
     override val hasCrossfade = true
     override val hasAutomix = true
@@ -59,6 +61,15 @@ internal object IosAppUiHost : AppUiHost {
 
 internal object IosPlayerHost : PlayerHost {
     override val settings: PlayerSettingsSource = IosPlayerSettings
+
+    override val hasNativeOutputGlyph = true
+
+    @Composable
+    override fun OutputGlyph(modifier: Modifier) = IosOutputGlyph(modifier)
+
+    @Composable
+    override fun QueueSelectionActions(queue: List<com.music.laya.data.model.Song>, currentIndex: Int, locked: Boolean) = IosQueueSelection(queue, currentIndex, locked)
+
 
     override fun cachedCanvas(song: Song): CanvasArtwork? = CanvasRepository.cached(song)
     override suspend fun canvasFor(song: Song): CanvasArtwork? = CanvasRepository.canvasFor(song)

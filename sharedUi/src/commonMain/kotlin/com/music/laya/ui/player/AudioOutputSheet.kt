@@ -512,7 +512,9 @@ private fun OutputRow(
                 .background(Color.White.copy(alpha = if (active) 0.16f else 0.08f)),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
+            if (active && PlayerPlatform.host.hasNativeOutputGlyph && device.kind in setOf(AudioOutputKind.BLUETOOTH, AudioOutputKind.WIRED)) {
+                PlayerPlatform.host.OutputGlyph(Modifier.size(21.dp))
+            } else Icon(
                 imageVector = iconFor(device.kind),
                 contentDescription = null,
                 tint = Color.White.copy(alpha = if (active) 1f else 0.7f),
