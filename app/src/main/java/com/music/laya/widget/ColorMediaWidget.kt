@@ -48,7 +48,8 @@ abstract class ColorMediaWidget : AppWidgetProvider() {
                 if (art != null) views.setImageViewBitmap(R.id.color_cover, art) else views.setImageViewResource(R.id.color_cover, R.drawable.widget_music_glyph)
                 views.setTextViewText(R.id.color_title, snapshot.title.ifBlank { "Laya" })
                 views.setTextViewText(R.id.color_artist, snapshot.artist)
-                views.setImageViewResource(R.id.color_play, if (snapshot.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play)
+                views.setImageViewResource(R.id.color_play, if (snapshot.isPlaying) R.drawable.ic_pod_pause else R.drawable.ic_pod_play)
+                fitDesign(context, views, manager.getAppWidgetOptions(id), wide)
                 for ((view, action) in listOf(R.id.color_play to MediaWidgetActions.ACTION_TOGGLE, R.id.color_previous to MediaWidgetActions.ACTION_PREVIOUS, R.id.color_next to MediaWidgetActions.ACTION_NEXT)) {
                     views.setOnClickPendingIntent(view, MediaWidgetActions.pendingIntent(context, action))
                 }
@@ -58,6 +59,36 @@ abstract class ColorMediaWidget : AppWidgetProvider() {
                 manager.updateAppWidget(id, views)
             }
         }
+        /**
+         * The iOS card's sizing: its design box (338x158 or 158x158 points) scaled by min(width, height) and centred,
+         * as PosterWidgetViews does with `scale`. The layout places everything by weights inside color_box; this
+         * gives color_box that aspect and sets what weights can't: text sizes and the glyphs' size in their boxes.
+         */
+        private fun fitDesign(context: Context, views: RemoteViews, options: Bundle, wide: Boolean) {
+            val designW = if (wide) 338f else 158f
+            val designH = 158f
+            // Portrait reports min width and max height (the launcher's own convention for the current size).
+            val w = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH).toFloat()
+            val h = options.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT).toFloat()
+            val scale = if (w > 0 && h > 0) min(w / designW, h / designH) else 1f
+            val density = context.resources.displayMetrics.density
+            fun px(dp: Float) = (dp * density).roundToInt()
+            if (w > 0 && h > 0) {
+                val padX = px((w - designW * scale) / 2); val padY = px((h - designH * scale) / 2)
+                views.setViewPadding(R.id.color_box, padX, padY, padX, padY)
+            }
+            val unit = android.util.TypedValue.COMPLEX_UNIT_DIP // points, as iOS pins Dynamic Type for the card
+            views.setTextViewTextSize(R.id.color_title, unit, (if (wide) 14f else 12.5f) * scale)
+            views.setTextViewTextSize(R.id.color_artist, unit, (if (wide) 13.5f else 12.5f) * scale)
+            // Box minus glyph, halved: backward/forward 24 (wide, 18 pt) or 22 (small, 16.5 pt) wide; play/pause 21 tall.
+            val box = if (wide) 38f else 36f
+            val skip = px((box - (if (wide) 24f else 22f)) / 2 * scale)
+            val toggle = px((box - 21f) / 2 * scale)
+            views.setViewPadding(R.id.color_previous, skip, skip, skip, skip)
+            views.setViewPadding(R.id.color_next, skip, skip, skip, skip)
+            views.setViewPadding(R.id.color_play, toggle, toggle, toggle, toggle)
+        }
+
         internal fun colorSurface(cover: Bitmap?, wide: Boolean): Bitmap {
             val w = if (wide) 676 else 316; val h = 316
             val small = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
