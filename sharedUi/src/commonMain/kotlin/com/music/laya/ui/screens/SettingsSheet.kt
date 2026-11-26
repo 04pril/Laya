@@ -493,19 +493,17 @@ fun SettingsScreen(
             // Sits with the account rather than with Playback: a party is up to
             // five signed-in people, and being signed in is the whole of what
             // the row needs before it will do anything.
-            if (onListenTogether != null) {
-                val listenTogetherTitle = stringResource(Res.string.listen_together)
-                row(listenTogetherTitle, "jam", "party", "sync", "friends") {
-                    SettingsRow(
-                        icon = Icons.Rounded.Groups,
-                        title = listenTogetherTitle,
-                        subtitle = party.code?.let {
-                            stringResource(Res.string.listen_together_in_party, it)
-                        } ?: stringResource(Res.string.listen_together_subtitle),
-                        badge = party.memberCount.takeIf { it > 1 }?.toString(),
-                        onClick = onListenTogether,
-                    )
-                }
+            val listenTogetherTitle = stringResource(Res.string.listen_together)
+            row(listenTogetherTitle, "jam", "party", "sync", "friends") {
+                SettingsRow(
+                    icon = Icons.Rounded.Groups,
+                    title = listenTogetherTitle,
+                    subtitle = party.code?.let {
+                        stringResource(Res.string.listen_together_in_party, it)
+                    } ?: stringResource(Res.string.listen_together_subtitle),
+                    badge = party.memberCount.takeIf { it > 1 }?.toString(),
+                    onClick = onListenTogether,
+                )
             }
         }
 
@@ -1564,9 +1562,9 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsCategory.ADVANCED)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.advanced_options) else null) {
+        if (engineOptions && show(SettingsCategory.ADVANCED)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.advanced_options) else null) {
             val smartAlignmentTitle = stringResource(Res.string.smart_version_alignment)
-            row(smartAlignmentTitle, "alignment", "sync", "waveform", "video", "audio", "skit", "intro", available = engineOptions) {
+            row(smartAlignmentTitle, "alignment", "sync", "waveform", "video", "audio", "skit", "intro") {
                 SettingsRow(
                     icon = Icons.Rounded.GraphicEq,
                     title = smartAlignmentTitle,
