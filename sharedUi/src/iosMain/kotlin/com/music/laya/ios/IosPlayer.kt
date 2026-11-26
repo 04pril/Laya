@@ -500,7 +500,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         startJob?.cancel(); nextJob?.cancel(); upgradeJob?.cancel(); autoplayJob?.cancel(); alignJob?.cancel()
         resetMix()
         IosLyricsAlign.offsetMs.value = 0
-        playingOpened = null
+        playingOpened = null; swapFrom = null
         queuedOpened = null; versionOpened.clear(); offSite.clear(); streams.clear()
         failedSources.clear()
         unproven = null
@@ -804,26 +804,12 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     /** Gives the engine [o] and records what it is, for Karaoke and the nerd stats. */
     private fun hand(song: Song, o: Opened, next: Boolean, swap: Boolean = false) {
-        playbackLog.source(song.videoId, o.sourceName, o.url, o.mime, when {
+        if (swap) swapFrom = playingOpened?.takeIf { it.first == song.videoId } else if (!next) swapFrom = null
+        note(song, o, next, when {
             next -> "queued"
             swap -> "swap requested"
             else -> "opened"
         })
-        // A loopback HLS playlist has no file behind it to decode: karaoke and analysis stay off for it.
-        if (IosLongStream.isLoopback(o.url)) streams.remove(song.videoId)
-        else streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
-        if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
-        if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
-        // Host only: addon URLs carry the owner's token in the path or query.
-        TrackLog.d(
-            "Laya",
-            "iOS player ${if (next) "queued" else "opened"} via ${o.sourceName} (${runCatching { Url(o.url).host }.getOrDefault("?")}) " +
-                "mime=${o.mime} declared=${o.format?.summary ?: "nothing"} ua=${if (o.headers.containsKey("User-Agent")) "custom" else "default"}",
-            about = song.videoId,
-        )
-        NerdStats.recordSource(song.videoId, o.sourceName)
-        o.format?.let { NerdStats.onSourceStream(song.videoId, it, o.sourceName) }
-        if (!next) { alignLyrics(song, o); playingOpened = song.videoId to o } else queuedOpened = song.videoId to o
         if (next) {
             syncTransition() // plan first: the engine parks the track by it
             engine.setNext(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url), o.fileDurationMs)
@@ -834,6 +820,42 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
             // Queued behind the engine's own hop to the main thread, so it lands after the old track is stopped.
             scope.launch { handing = false }
         }
+    }
+
+    /**
+     * The copy playing before the last swap was asked for. [hand] records the new copy as playing when it asks, so the
+     * player's source line and the failure memory follow it; a swap the engine refuses puts this one back.
+     */
+    private var swapFrom: Pair<String, Opened>? = null
+
+    override fun onSourceSwap(applied: Boolean) {
+        val from = swapFrom ?: return
+        swapFrom = null
+        if (applied) return
+        val now = song ?: return
+        if (now.videoId != from.first || playingOpened?.first != from.first) return
+        NerdStats.clearDeclared(now.videoId)
+        note(now, from.second, next = false, why = "swap refused, back on")
+    }
+
+    /** Records [o] as the playing (or queued) copy of [song]: the source line, Karaoke's stream, the nerd stats. */
+    private fun note(song: Song, o: Opened, next: Boolean, why: String) {
+        playbackLog.source(song.videoId, o.sourceName, o.url, o.mime, why)
+        // A loopback HLS playlist has no file behind it to decode: karaoke and analysis stay off for it.
+        if (IosLongStream.isLoopback(o.url)) streams.remove(song.videoId)
+        else streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
+        if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
+        if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
+        // Host only: addon URLs carry the owner's token in the path or query.
+        TrackLog.d(
+            "Laya",
+            "iOS player ${if (next) "queued" else if (why.startsWith("swap refused")) why else "opened"} via ${o.sourceName} (${runCatching { Url(o.url).host }.getOrDefault("?")}) " +
+                "mime=${o.mime} declared=${o.format?.summary ?: "nothing"} ua=${if (o.headers.containsKey("User-Agent")) "custom" else "default"}",
+            about = song.videoId,
+        )
+        NerdStats.recordSource(song.videoId, o.sourceName)
+        o.format?.let { NerdStats.onSourceStream(song.videoId, it, o.sourceName) }
+        if (!next) { alignLyrics(song, o); playingOpened = song.videoId to o } else queuedOpened = song.videoId to o
     }
 
     /**
@@ -1299,6 +1321,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (IosCast.active) return
         failedSources.clear()
         unproven = null
+        swapFrom = null
         ListeningRecorder.onStopped()
         PlaybackTracker.onTrackChanged(trackedSec)
         trackedSec = 0
