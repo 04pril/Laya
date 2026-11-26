@@ -171,7 +171,7 @@ internal sealed interface IosPage {
 private fun browseTypeOf(id: String, fallback: BrowseType) = when {
     id.startsWith("UC") -> BrowseType.ARTIST
     id.startsWith("MPREb") || id.startsWith("VLOLAK") || id.startsWith("OLAK") -> BrowseType.ALBUM
-    id.startsWith("VL") || id.startsWith("PL") -> BrowseType.PLAYLIST
+    id.startsWith("VL") || id.startsWith("PL") || YtMusicRepository.isRadioMix(id) -> BrowseType.PLAYLIST
     else -> fallback
 }
 

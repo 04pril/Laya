@@ -9,6 +9,9 @@ final class TidalHlsServer {
     private struct Playlist {
         let text: Data
         let segments: [URL]
+        let requiresByteRanges: Bool
+        /// Sent with every upstream fetch: a YouTube stream wants its minting client's headers (none for Tidal).
+        var headers: [String: String] = [:]
         var network = NetworkReport()
     }
 
@@ -75,7 +78,7 @@ final class TidalHlsServer {
         listener.start(queue: queue)
     }
 
-    func register(playlist: String, segments: [String]) -> String? {
+    func register(playlist: String, segments: [String], headers: [String: String] = [:]) -> String? {
         let urls = segments.compactMap { raw -> URL? in
             guard let url = URL(string: raw), url.scheme == "https", url.host != nil,
                   url.user == nil, url.password == nil, url.fragment == nil else { return nil }
@@ -86,7 +89,8 @@ final class TidalHlsServer {
             startIfNeeded()
             guard let port else { return nil }
             let id = UUID().uuidString
-            playlists[id] = Playlist(text: Data(playlist.utf8), segments: urls)
+            let requiresByteRanges = urls.allSatisfy { $0 == urls.first }
+            playlists[id] = Playlist(text: Data(playlist.utf8), segments: urls, requiresByteRanges: requiresByteRanges, headers: headers)
             playlistOrder.append(id)
             if playlistOrder.count > 64 { playlists.removeValue(forKey: playlistOrder.removeFirst()) }
             return "http://127.0.0.1:\(port.rawValue)/tidal/\(id)/playlist.m3u8"
@@ -194,11 +198,15 @@ final class TidalHlsServer {
 
         var upstream = URLRequest(url: playlist.segments[index])
         upstream.httpMethod = head ? "HEAD" : "GET"
+        for (name, value) in playlist.headers where name.lowercased() != "range" { upstream.setValue(value, forHTTPHeaderField: name) }
         upstream.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
-        if let value = lines.dropFirst().first(where: { $0.lowercased().hasPrefix("range:") })?
-            .dropFirst(6).trimmingCharacters(in: .whitespaces),
-           value.range(of: #"^bytes=[0-9]*-[0-9]*$"#, options: .regularExpression) != nil {
-            upstream.setValue(value, forHTTPHeaderField: "Range")
+        let range = lines.dropFirst().first(where: { $0.lowercased().hasPrefix("range:") })?
+            .dropFirst(6).trimmingCharacters(in: .whitespaces)
+        if let range, range.range(of: #"^bytes=[0-9]*-[0-9]*$"#, options: .regularExpression) != nil {
+            upstream.setValue(range, forHTTPHeaderField: "Range")
+        } else if playlist.requiresByteRanges && !head {
+            respond(connection, status: "416 Range Not Satisfiable")
+            return
         }
 
         let key = ObjectIdentifier(connection)
@@ -207,7 +215,9 @@ final class TidalHlsServer {
             self.queue.async {
                 guard self.tasks.removeValue(forKey: key) != nil else { return }
                 guard let response = response as? HTTPURLResponse, response.url?.scheme == "https",
-                      [200, 206].contains(response.statusCode), let data else {
+                      [200, 206].contains(response.statusCode),
+                      !playlist.requiresByteRanges || head || response.statusCode == 206,
+                      let data else {
                     if self.shouldObserve {
                         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
                         let code = (error as NSError?)?.code ?? 0
