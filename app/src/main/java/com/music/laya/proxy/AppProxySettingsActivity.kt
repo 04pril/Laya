@@ -28,8 +28,10 @@ class AppProxySettingsActivity : AppCompatActivity() {
             var host by remember { mutableStateOf(initial.host) }
             var port by remember { mutableStateOf(if (initial.port == 0) "" else initial.port.toString()) }
             var username by remember { mutableStateOf(initial.username) }
-            // Never shown back: empty keeps the saved one (as on iOS), and clearing the user name clears both.
+            // Reuse the saved password only for the same proxy and user name.
             var password by remember { mutableStateOf("") }
+            val sameLogin = kind == initial.kind && host.trim().equals(initial.host, ignoreCase = true) &&
+                port.toIntOrNull() == initial.port && username.trim() == initial.username
             var error by remember { mutableStateOf(false) }
             var restart by remember { mutableStateOf(false) }
             val importer = rememberWireGuardImportUiState()
@@ -70,7 +72,7 @@ class AppProxySettingsActivity : AppCompatActivity() {
                             Spacer(Modifier.height(12.dp))
                             OutlinedTextField(password, { password = it; error = false },
                                 label = { Text(androidText("비밀번호", "Password")) },
-                                placeholder = { Text(if (initial.password.isNotEmpty() && username == initial.username)
+                                placeholder = { Text(if (initial.password.isNotEmpty() && sameLogin)
                                     androidText("저장됨 (비우면 유지)", "Saved (leave empty to keep)") else androidText("선택", "Optional")) },
                                 visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
                                 keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
@@ -78,7 +80,7 @@ class AppProxySettingsActivity : AppCompatActivity() {
                         }
                     }
                     importer.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp)) }
-                    if (error) Text(androidText("주소·포트를 확인하고, WireGuard는 먼저 .conf를 가져와 주세요.", "Check the endpoint; import a .conf before enabling WireGuard."), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
+                    if (error) Text(androidText("주소·포트와 로그인 정보를 확인해 주세요. WireGuard는 먼저 .conf를 가져와 주세요.", "Check the endpoint and credentials. Import a .conf before enabling WireGuard."), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
                     Button(onClick = {
                         val route = when (kind) {
                             AppProxyKind.DIRECT -> AppProxyRoute.DIRECT
@@ -86,9 +88,8 @@ class AppProxySettingsActivity : AppCompatActivity() {
                             else -> {
                                 val user = username.trim()
                                 val pass = when {
-                                    user.isEmpty() -> ""
                                     password.isNotEmpty() -> password
-                                    user == initial.username -> initial.password // left empty: keep the saved one
+                                    sameLogin -> initial.password
                                     else -> ""
                                 }
                                 AppProxyRoute(kind, host.trim(), port.toIntOrNull() ?: 0, username = user, password = pass)

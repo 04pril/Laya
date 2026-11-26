@@ -13,9 +13,9 @@
 
 <br/>
 
-[![Latest release](https://img.shields.io/github/v/release/impin2rex/Laya?style=for-the-badge&labelColor=0d1117)](https://github.com/impin2rex/Laya/releases)
-[![License](https://img.shields.io/github/license/impin2rex/Laya?style=for-the-badge&labelColor=0d1117)](https://github.com/impin2rex/Laya/blob/main/LICENSE)
-[![Downloads](https://img.shields.io/github/downloads/impin2rex/Laya/total?style=for-the-badge&labelColor=0d1117)](https://github.com/impin2rex/Laya/releases)
+[![Latest release](https://img.shields.io/github/v/release/04pril/Laya?style=for-the-badge&labelColor=0d1117)](https://github.com/04pril/Laya/releases/latest)
+[![License](https://img.shields.io/github/license/04pril/Laya?style=for-the-badge&labelColor=0d1117)](https://github.com/04pril/Laya/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/github/downloads/04pril/Laya/total?style=for-the-badge&labelColor=0d1117)](https://github.com/04pril/Laya/releases)
 
 <br/>
 
@@ -110,13 +110,13 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/android/cozy.svg" alt="Download for Android" height="55"/></a>
+<a href="https://github.com/04pril/Laya/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/android/cozy.svg" alt="Download for Android" height="55"/></a>
 <a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://api.jm26.net/badge?label=&icon=f17b&message=Android%20TV&color=000000&labelcolor=000000&fontcolor=white&autofontcolor=false&scale=20" alt="Android TV" height="55"/></a>
 <a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://img.shields.io/badge/Wear%20OS-%234285F4.svg?style=for-the-badge&logo=wear-os&logoColor=white" alt="Available on Wear%20OS" height="55"/></a>
 <a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/windows/cozy.svg" alt="Download for Windows" height="55"/></a>
 <a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/macos/cozy.svg" alt="Download for macOS" height="55"/></a>
 <a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://api.jm26.net/badge?label=&icon=f17c&message=Linux&color=000000&labelcolor=000000&fontcolor=white&autofontcolor=false&scale=20" alt="Linux" height="55"/></a>
-<a href="https://github.com/impin2rex/Laya/releases" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/ios/cozy.svg" alt="Download for iPhone" height="55"/></a>
+<a href="https://github.com/04pril/Laya/releases/latest" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/supported/ios/cozy.svg" alt="Download for iPhone" height="55"/></a>
 
 <br/>
 
@@ -126,11 +126,11 @@
 
 <br/>
 
-Grab the latest build for your device from the [Releases](https://github.com/impin2rex/Laya/releases) page.
+Get the iPhone and Android builds of this fork from [Laya Releases](https://github.com/04pril/Laya/releases/latest). Desktop, Android TV, and Wear OS builds are available from the [upstream releases](https://github.com/impin2rex/Laya/releases).
 
 | Platform | File | Notes |
 |---|---|---|
-| Android | `Laya-<version>-android-<abi>.apk` | Sideloading requires enabling "Install unknown apps" for whichever app you download it with. |
+| Android | `Laya-<version>-android-arm64.apk` | Sideloading requires enabling "Install unknown apps" for whichever app you download it with. |
 | Android TV | `Laya-<version>-android-tv-<abi>.apk` | Sideload with `adb install` or a file manager on the TV. |
 | Wear OS | `Laya-<version>-wear-os.apk` | Install over ADB / Wi-Fi debugging. |
 | Windows | `.exe`, `.msi`, portable `.zip` | Run the `.exe` installer, no admin rights needed. The `.zip` runs from any folder. |
@@ -153,14 +153,14 @@ The iOS build is an unsigned `.ipa`, so it has to be signed with your own Apple 
 **AltStore Classic / SideStore source for this fork:**
 
 ```text
-https://raw.githubusercontent.com/04pril/laya-iOS/main/sidestore/source.json
+https://raw.githubusercontent.com/04pril/Laya/main/sidestore/source.json
 ```
 
 Add this URL in **Sources → +** to install the current regular release and receive updates.
 
 1. **Set up SideStore** once by following the official guide at [docs.sidestore.io](https://docs.sidestore.io). It needs a computer for the first install, a free Apple ID, and a local VPN (LocalDevVPN / StosVPN) that SideStore uses to refresh apps.
 2. **Enable Developer Mode** on the device: Settings → Privacy & Security → Developer Mode → On, then restart.
-3. **Download the IPA** from [Releases](https://github.com/04pril/laya-iOS/releases/latest) straight onto the iPhone (`Laya-<version>.ipa`).
+3. **Download the IPA** from [Releases](https://github.com/04pril/Laya/releases/latest) straight onto the iPhone (`Laya-<version>.ipa`).
 4. In SideStore open **My Apps**, tap **+**, and pick the downloaded IPA. Sign in with your Apple ID if asked and wait for the install to finish.
 5. Turn the VPN on and open **Laya** from the home screen. If iOS says the developer is untrusted, go to Settings → General → VPN & Device Management and trust your Apple ID.
 

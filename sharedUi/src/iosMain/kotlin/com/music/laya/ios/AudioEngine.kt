@@ -7,10 +7,10 @@ package com.music.laya.ios
  */
 interface AudioEngine {
     /** Start [url] from the beginning, dropping anything queued. Each HTTP request carries [headers] and asks for at most [chunkBytes]. */
-    fun play(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long)
+    fun play(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long, fileDurationMs: Long)
 
     /** Queue the track after the current one so it starts gaplessly, even with the screen locked. */
-    fun setNext(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long)
+    fun setNext(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long, fileDurationMs: Long)
     fun clearNext()
 
     /**
@@ -69,12 +69,6 @@ interface AudioEngineListener {
     fun onProgress(positionMs: Long, durationMs: Long, isPlaying: Boolean, isBuffering: Boolean)
     fun onEnded()
     fun onAdvancedToNext()
-
-    /**
-     * Main thread. A [AudioEngine.swapCurrent] ended: [applied] when the copy took over, false when the engine stayed
-     * on the playing copy (refused, failed to load, could not line up). Not called when a stop or new track drops it.
-     */
-    fun onSourceSwap(applied: Boolean)
 
     /** The current item's decoded format once it is ready (0 where unknown): [mimeType] in Media3's naming, e.g. audio/mp4a-latm. */
     fun onAudioFormat(mimeType: String?, sampleRateHz: Int, channels: Int, bitDepth: Int, bitrateKbps: Int)

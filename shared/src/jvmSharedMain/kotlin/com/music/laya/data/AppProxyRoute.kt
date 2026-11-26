@@ -21,7 +21,7 @@ data class AppProxyRoute(
 
     fun validated(): AppProxyRoute {
         if (kind == AppProxyKind.DIRECT) {
-            require(host.isEmpty() && port == 0 && !hasCredentials) { "Direct mode cannot specify a proxy" }
+            require(host.isEmpty() && port == 0 && !hasCredentials && password.isEmpty()) { "Direct mode cannot specify a proxy" }
             return this
         }
         // RFC 1929 carries each in at most 255 bytes; Basic auth cannot carry a ':' in the user name.

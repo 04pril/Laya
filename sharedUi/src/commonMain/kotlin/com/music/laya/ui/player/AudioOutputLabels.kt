@@ -14,14 +14,12 @@ import org.jetbrains.compose.resources.stringResource
  */
 @Composable
 internal fun outputLabel(device: AudioOutputDevice, accountName: String?): String {
-    val firstName = accountName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
     return when {
         device.name.isNotBlank() -> device.name
         device.kind == AudioOutputKind.WIRED -> stringResource(Res.string.wired_headphones)
         device.kind == AudioOutputKind.USB -> stringResource(Res.string.usb_audio)
         device.kind == AudioOutputKind.HDMI -> stringResource(Res.string.hdmi_output)
-        firstName != null -> stringResource(Res.string.personal_phone, firstName)
-        else -> stringResource(Res.string.this_phone)
+        else -> localOutputLabel(accountName)
     }
 }
 
@@ -35,14 +33,18 @@ internal fun outputLabel(device: AudioOutputDevice, accountName: String?): Strin
 @Composable
 internal fun rememberAudioOutputName(accountName: String?): String {
     val outputs = rememberAudioOutputs()
-    val active = outputs.firstOrNull { it.isActive }
-        ?: return if (accountName.isNullOrBlank()) {
-            stringResource(Res.string.this_phone)
-        } else {
-            stringResource(
-                Res.string.personal_phone,
-                accountName.trim().split(Regex("\\s+")).first(),
-            )
-        }
+    val active = outputs.firstOrNull { it.isActive } ?: return localOutputLabel(accountName)
     return outputLabel(active, accountName)
+}
+
+@Composable
+private fun localOutputLabel(accountName: String?): String {
+    val firstName = accountName?.trim()?.split(Regex("\\s+"))?.firstOrNull()?.takeIf { it.isNotBlank() }
+    return if (PlayerPlatform.host.isIPad) {
+        if (firstName == null) stringResource(Res.string.this_ipad)
+        else stringResource(Res.string.personal_ipad, firstName)
+    } else {
+        if (firstName == null) stringResource(Res.string.this_phone)
+        else stringResource(Res.string.personal_phone, firstName)
+    }
 }

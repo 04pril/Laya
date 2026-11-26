@@ -161,6 +161,7 @@ object Http {
                 val protocol = requestingProtocol ?: return null
                 if (!protocol.equals("SOCKS5", ignoreCase = true)) return null
                 if (!requestingHost.orEmpty().equals(route.host, ignoreCase = true)) return null
+                if (requestingPort != route.port) return null
                 return java.net.PasswordAuthentication(route.username, route.password.toCharArray())
             }
         }

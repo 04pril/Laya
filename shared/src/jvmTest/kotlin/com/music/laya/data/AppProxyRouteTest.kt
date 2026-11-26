@@ -41,17 +41,19 @@ class AppProxyRouteTest {
             AppProxyRoute(AppProxyKind.HTTP, "proxy.example", 8080, username = "a:b", password = "x"),
             AppProxyRoute(AppProxyKind.WIREGUARD_LOCAL, "127.0.0.1", 8080, username = "u"),
             AppProxyRoute(username = "u"),
+            AppProxyRoute(password = "no user"),
         )) assertFailsWith<IllegalArgumentException> { route.validated() }
     }
 
     @Test fun socksLoginAnswersOnlyThatProxyAndProtocol() {
         val route = AppProxyRoute(AppProxyKind.SOCKS5, "proxy.example", 1080, username = "user", password = "s3cret")
         val login = Http.socksLogin(route)
-        fun ask(host: String, protocol: String) = login.requestPasswordAuthenticationInstance(
-            host, null, 1080, protocol, "SOCKS authentication", null, null, java.net.Authenticator.RequestorType.SERVER)
+        fun ask(host: String, protocol: String, port: Int = 1080) = login.requestPasswordAuthenticationInstance(
+            host, null, port, protocol, "SOCKS authentication", null, null, java.net.Authenticator.RequestorType.SERVER)
         assertEquals("user", ask("proxy.example", "SOCKS5")?.userName)
         assertEquals("s3cret", ask("PROXY.example", "SOCKS5")?.password?.concatToString())
         assertNull(ask("other.example", "SOCKS5"))
         assertNull(ask("proxy.example", "http"))
+        assertNull(ask("proxy.example", "SOCKS5", port = 1081))
     }
 }

@@ -25,7 +25,7 @@ import kotlin.math.abs
 object LrcLib {
 
     private const val BASE = "https://lrclib.net/api"
-    private const val AGENT = "Laya (https://github.com/04pril/laya-iOS)"
+    private const val AGENT = "Laya (https://github.com/04pril/Laya)"
 
     private val json = Json { ignoreUnknownKeys = true }
 

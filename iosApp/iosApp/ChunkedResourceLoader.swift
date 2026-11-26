@@ -34,6 +34,14 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private(set) var knownLength: Int64?
     private let chunkBytes: Int64
     private var session: URLSession!
+    private lazy var handlesGoogleAACHeader: Bool = {
+        guard let host = source.host, host == "googlevideo.com" || host.hasSuffix(".googlevideo.com"),
+              mimeType.split(separator: ";").first == "audio/mp4"
+        else { return false }
+        return URLComponents(url: source, resolvingAgainstBaseURL: false)?
+            .queryItems?.contains { $0.name == "itag" && $0.value == "140" } == true
+    }()
+    private var didLogGoogleAACHeader = false
     private var tasks: [ObjectIdentifier: URLSessionDataTask] = [:]
     private var cancelled: Set<ObjectIdentifier> = []
     /// Set once the session is invalidated; creating a task after that throws.
@@ -270,9 +278,17 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             return
         }
         let chunkEnd = min(end, start + chunkBytes - 1)
+        let headerEnd = Int64(GoogleAACPriming.headerBytes - 1)
+        // If a range can see the edited moov, fetch enough of the prefix to normalize it as a unit.
+        // The first two-byte type probe cannot see the edit and doesn't need to wait for more bytes.
+        let readsHeader = handlesGoogleAACHeader && start <= headerEnd && chunkEnd >= 8
+        let requestStart = readsHeader ? 0 : start
+        let requestEnd = readsHeader
+            ? min(max(headerEnd, min(chunkEnd, chunkBytes - 1)), (knownLength ?? Int64.max) - 1)
+            : chunkEnd
 
         var request = URLRequest(url: source)
-        request.setValue("bytes=\(start)-\(chunkEnd)", forHTTPHeaderField: "Range")
+        request.setValue("bytes=\(requestStart)-\(requestEnd)", forHTTPHeaderField: "Range")
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
 
         let began = ProcessInfo.processInfo.systemUptime
@@ -324,12 +340,20 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     self.tasks.removeValue(forKey: key)
                     return
                 }
-                loadingRequest.dataRequest?.respond(with: data)
-                self.noteDelivered(start: start, bytes: data.count, tookSec: ProcessInfo.processInfo.systemUptime - began)
-                let next = start + Int64(data.count)
+                var supplied = data
+                if readsHeader {
+                    if GoogleAACPriming.normalize(&supplied), !self.didLogGoogleAACHeader {
+                        self.didLogGoogleAACHeader = true
+                        nativeLog("Loader: explicit YouTube AAC priming")
+                    }
+                    supplied = supplied.dropFirst(Int(start - requestStart)).prefix(Int(chunkEnd - start + 1))
+                }
+                loadingRequest.dataRequest?.respond(with: supplied)
+                self.noteDelivered(start: start, bytes: supplied.count, tookSec: ProcessInfo.processInfo.systemUptime - began)
+                let next = start + Int64(supplied.count)
                 let finalEnd = min(end, (self.knownLength ?? Int64.max) - 1)
                 if let length = self.knownLength, next >= length { self.deliveredEnd = true }
-                if data.isEmpty || next > finalEnd {
+                if supplied.isEmpty || next > finalEnd {
                     loadingRequest.finishLoading()
                     self.tasks.removeValue(forKey: key)
                 } else {

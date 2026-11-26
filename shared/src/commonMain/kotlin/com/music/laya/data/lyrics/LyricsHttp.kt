@@ -15,7 +15,7 @@ import kotlinx.serialization.json.Json
  * arrives after the second chorus is of no use to anyone, and the fallbacks
  * behind it are the better answer.
  */
-internal const val LYRICS_AGENT = "Laya (https://github.com/04pril/laya-iOS)"
+internal const val LYRICS_AGENT = "Laya (https://github.com/04pril/Laya)"
 
 val lyricsJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
