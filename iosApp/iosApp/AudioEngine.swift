@@ -676,20 +676,20 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// The playing item can't go on. AVQueuePlayer would quietly move to the queued next track
     /// (a skip nobody asked for), so the queue is held here and Kotlin decides: retry, or move on.
     /// A queued item's failure is left for when it becomes current.
-    private func fail(_ item: AVPlayerItem, message: String, httpStatus: Int32) {
+    private func fail(_ item: AVPlayerItem, message: String, httpStatus: Int32, reportedError: Error? = nil) {
         guard item === currentItem else { return }
         // AVFoundation reads some fragmented MP4s as twice their length (see ChunkedResourceLoader.durationHint), so
         // the real end arrives as a failure. That is the track ending, not breaking: move on rather than retry it.
         if atStatedEnd(item) { return endByHint(item) }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
-        let detail = failureDetail(item)
+        let detail = failureDetail(item, reportedError: reportedError)
         if LayaAppIdentity.scheme == "layatest" {
             let ns = item.error as NSError?
             let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
             listener?.onPlaybackDiagnostic(message:
                 "native playback error code=\(ns?.code ?? 0) underlyingCode=\(under?.code ?? 0) httpStatus=\(httpStatus)")
         }
-        nativeLog("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")", warn: true)
+        nativeLog("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain)" } ?? "-")", warn: true)
         cancelFade()
         clearNextOnMain()
         player.pause()
@@ -699,8 +699,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     /// The error codes under AVFoundation's generic message, what the loader saw on the wire, and memory left.
-    private func failureDetail(_ item: AVPlayerItem) -> String {
-        let ns = item.error as NSError?
+    private func failureDetail(_ item: AVPlayerItem, reportedError: Error? = nil) -> String {
+        // Free-form system errors and AVPlayer error comments may include a signed stream URL.
+        let ns = (item.error ?? reportedError) as NSError?
         let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
         let loader = loaders[ObjectIdentifier(item)]
         let at = item.currentTime().seconds
@@ -812,7 +813,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.updateNowPlayingTiming()
                     self.reportAudioFormat(item)
                 case .failed:
-                    self.fail(item, message: item.error?.localizedDescription ?? "Playback failed", httpStatus: 0)
+                    self.fail(item, message: "Playback failed", httpStatus: 0)
                 default:
                     break
                 }
@@ -855,7 +856,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func currentItemChanged(from old: AVPlayerItem?) {
         let now = player.currentItem
         if old !== now {
-            nativeLog("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) err=\(old?.error?.localizedDescription ?? "-"), next=\(now === nextItem), parked=\(parked))")
+            let error = old?.error as NSError?
+            nativeLog("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) error=\(error?.domain ?? "-") \(error?.code ?? 0), next=\(now === nextItem), parked=\(parked))")
         }
         if let fresh = reopening, now === fresh {
             // The same track reopened precisely (reopenPrecise), not the next one.
@@ -873,7 +875,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             let detail = failureDetail(old) // before dropItem takes the loader's record with it
             dropItem(old)
             if failedItems.insert(ObjectIdentifier(old)).inserted {
-                listener?.onError(message: "\(old.error?.localizedDescription ?? "Playback stopped") \(detail)", httpStatus: 0)
+                listener?.onError(message: "Playback stopped \(detail)", httpStatus: 0)
             }
             return
         }
@@ -1387,7 +1389,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         ) { [weak self] note in
             guard let self, let item = note.object as? AVPlayerItem else { return }
             let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            self.fail(item, message: error?.localizedDescription ?? "Playback stopped", httpStatus: 0)
+            self.fail(item, message: "Playback stopped", httpStatus: 0, reportedError: error)
         })
         if LayaAppIdentity.scheme == "layatest" {
             notificationTokens.append(center.addObserver(
