@@ -23,7 +23,7 @@
           "version": "1.9.7",
           "buildVersion": "64",
           "date": "2026-11-26T10:55:39Z",
-          "localizedDescription": "- 무손실 다운로드에서 Tidal이 선택되면 FLAC 음원을 `.m4a` 파일로 저장하고 FLAC 배지를 표시합니다.\n\n\n- 상세 음원 정보 표시는 화면 설정 맨 아래로 옮겼습니다.\n- 함께 듣기, 다운로드, 언어 설정은 설정 첫 화면에서 바로 열 수 있습니다. 앱 아이콘은 첫 화면 맨 아래에 따로 배치했습니다.\n- 고급 옵션은 지원하는 플랫폼에서 표시됩니다.\n\n실제 Tidal 음원의 오프라인 재생과 탐색은 iPhone에서 확인이 남아 있습니다.",
+          "localizedDescription": "- 홈 섹션 순서 변경·숨김과 My Playlist 추가. YouTube Music·Spotify 보관함이나 URL에서 가져올 수 있음.\n- 맞춤 믹스·슈퍼믹스·곡 라디오 목록이 무한으로 늘어나던 버그 수정.\n- 애드온 탭에 Qobuz·Tidal 검색 추가. 애드온 검색 중복 곡을 묶고, 한글 검색어·한 글자 아티스트 매칭 개선.\n- Qobuz·Tidal도 다른 애드온과 함께 드래그해 재생 우선순위 변경 가능. Spotify Canvas 다국어 매칭 개선.\n- Qobuz·Tidal 인증에 앱 프록시 적용 및 **새 인증** 버튼 추가. 일시적인 서버 오류에는 기존 인증 유지.\n- **플레이어 및 편의 설정**은 설정 맨 위에 배치. 함께 듣기·다운로드·언어는 첫 화면, 상세 음원 정보는 화면 설정 맨 아래, 앱 아이콘은 첫 화면 맨 아래로 이동.\n- 휴대폰 재생 버튼 크기와 중앙 위치를 조정. 가사·오디오 출력·큐 버튼도 위쪽 재생 버튼에 맞춰 정렬.\n\n\n- Android에서만 되던 Tidal 애드온을 iOS에도 추가.\n- 15분 이상 긴 YouTube 음원 로딩 개선.\n- 무손실 애드온 캐시 이어받기·재사용 개선.\n- 멈춘 YouTube 음원은 주소를 다시 받아 재시도. 다음 곡 준비 중 화면이 굳던 문제, AAC에서 무손실로 전환 오류도 개선.\n- iPad UI 대응, Duo 안전 영역 조정.\n- iOS 26 이상에서 지원되는 Spotify Canvas를 잠금화면에 표시.",
           "downloadURL": "https://github.com/04pril/Laya/releases/download/ios-v1.9.7/Laya-1.9.7.ipa",
           "size": 91222344,
           "minOSVersion": "17.0"
