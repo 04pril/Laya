@@ -605,7 +605,8 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
             val loaded = loadDetail(base)
             stack = stack.map { if (it is IosPage.Detail && it.page === base) IosPage.Detail(loaded) else it }
             val seen = HashSet<String>()
-            var next = loaded.continuation
+            // A mix's continuations never run dry: its first page is the page (#8, YtMusicRepository.isEndlessMix).
+            var next = loaded.continuation.takeUnless { YtMusicRepository.isEndlessMix(base.browseId) }
             while (next != null && seen.add(next)) {
                 val more = YtMusicRepository.moreSongs(next).getOrNull() ?: break
                 var progressed = false

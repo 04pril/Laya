@@ -2895,6 +2895,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private fun fillIn(browseId: String, token: String, artworkFallback: String?) {
         fillInJobs[browseId]?.cancel()
+        // A mix's continuations never run dry, so following them grew the page for as long as it was open (#8). Its
+        // first page is the page; playing it still extends the queue (the service's own continuation, then autoplay).
+        if (YtMusicRepository.isEndlessMix(browseId)) return
         fillInJobs[browseId] = viewModelScope.launch {
             // Publish and draw the first response before spending the shared
             // connection on page two. On a long playlist the continuation can
