@@ -266,7 +266,9 @@ object SourceResolver {
         val active = SourceRegistry.activeForPlayback()
         val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE } ?: return null
         val request = requestForNow()
-        val (source, stream) = bestAcross(rankedAbove(youtube.configId, active), target, request, late = late)
+        // A source that failed this track in the player lately is not offered it again (PlaybackFailures).
+        val skipped = PlaybackFailures.ruledOut(target)
+        val (source, stream) = bestAcross(rankedAbove(youtube.configId, active).filter { it.configId !in skipped }, target, request, late = late)
             ?: return null
         // Says what was found, not what the caller will do with it. This
         // line used to read "substituted" unconditionally, including for
@@ -292,7 +294,7 @@ object SourceResolver {
         val active = SourceRegistry.activeForPlayback()
         val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE }
         val candidates = (if (youtube != null) rankedAbove(youtube.configId, active) else active)
-            .filter { it.configId !in failed && it.kind != SourceKind.YOUTUBE }
+            .filter { it.configId !in failed && it.configId !in PlaybackFailures.ruledOut(target) && it.kind != SourceKind.YOUTUBE }
         if (candidates.isEmpty()) return null
         return bestAcross(candidates, target, requestForNow())
     }
