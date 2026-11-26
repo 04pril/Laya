@@ -70,6 +70,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.GraphicsLayerScope
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.Animatable
@@ -1493,85 +1494,72 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         // The key a page keeps its scroll and other saved state under, so the page under the top one,
                         // and a page Back returns to, come back where they were left.
                         fun stateKey(page: IosPage?, tabIndex: Int, index: Int) = "$tabIndex/$index/${page?.hashCode() ?: 0}"
-                        @Composable
-                        fun Page(page: IosPage?, tabIndex: Int, index: Int) {
-                            key(stateKey(page, tabIndex, index)) {
-                                pageStates.SaveableStateProvider(stateKey(page, tabIndex, index)) { renderPage(page, tabIndex) }
-                            }
-                        }
                         val moving by remember { derivedStateOf { pageShift.value > 0.5f || pageShift.value < -0.5f } }
-                        when {
-                            // A tab switch: the two tabs side by side, the new one coming in from its side of the bar.
-                            tabChange || outgoingIsTab -> {
+                        // Every page on screen is one keyed layer of the same list, bottom first. A page that goes from
+                        // being the one shown to the one under a push (or back) keeps its place in the composition and
+                        // with it its scroll; drawn from two different spots it was built afresh, at the top, mid-slide.
+                        val layers = buildList {
+                            fun layer(page: IosPage?, tabIndex: Int, index: Int, opaque: Boolean, dim: (() -> Float)? = null,
+                                      move: GraphicsLayerScope.() -> Unit) =
+                                add(PageLayer(stateKey(page, tabIndex, index), page, tabIndex, opaque, dim, move))
+                            if (tabChange || outgoingIsTab) {
                                 val out = if (tabChange) Triple(shownTop, shownTab, shownDepth - 1) else outgoing
                                 // On the first frame the effect has not run yet: which motion it will be is read here.
                                 val motion = if (!tabChange) tabMotion else when (searchTab) {
                                     tab -> TabMotion.Rise; shownTab -> TabMotion.Drop; else -> TabMotion.Slide
                                 }
-                                val incoming: @Composable () -> Unit = { Page(stack.lastOrNull(), tab, stack.size - 1) }
-                                val leavingTab: @Composable () -> Unit = { if (out != null) Page(out.first, out.second, out.third) }
+                                val inPage = stack.lastOrNull(); val inIndex = stack.size - 1
                                 when (motion) {
+                                    // The two tabs side by side, the new one coming in from its side of the bar.
                                     TabMotion.Slide -> {
-                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                        if (out != null) layer(out.first, out.second, out.third, opaque = false) {
                                             translationX = if (tabChange) 0f else pageShift.value - slideDir * pageWidth
-                                        }) { leavingTab() }
-                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                        }
+                                        layer(inPage, tab, inIndex, opaque = true) {
                                             translationX = if (tabChange) tabDirection * pageWidth else pageShift.value
-                                        }.background(windowBackground)) { incoming() }
+                                        }
                                     }
                                     // Search comes up over the screen it was opened from, which stays put and dims.
                                     TabMotion.Rise -> {
-                                        Box(Modifier.fillMaxSize()) {
-                                            leavingTab()
-                                            Box(Modifier.fillMaxSize().graphicsLayer {
-                                                val y = if (tabChange) pageHeight else pageShift.value
-                                                alpha = 0.3f * (1f - y / pageHeight)
-                                            }.background(Color.Black))
-                                        }
-                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                        if (out != null) layer(out.first, out.second, out.third, opaque = false,
+                                            dim = { 0.3f * (1f - (if (tabChange) pageHeight else pageShift.value) / pageHeight) }) {}
+                                        layer(inPage, tab, inIndex, opaque = true) {
                                             translationY = if (tabChange) pageHeight else pageShift.value
-                                        }.background(windowBackground)) { incoming() }
+                                        }
                                     }
                                     // And goes back down, uncovering the tab chosen.
                                     TabMotion.Drop -> {
-                                        Box(Modifier.fillMaxSize()) {
-                                            incoming()
-                                            Box(Modifier.fillMaxSize().graphicsLayer {
-                                                val y = if (tabChange) 0f else pageShift.value
-                                                alpha = 0.3f * (1f - y / pageHeight)
-                                            }.background(Color.Black))
-                                        }
-                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                        layer(inPage, tab, inIndex, opaque = false,
+                                            dim = { 0.3f * (1f - (if (tabChange) 0f else pageShift.value) / pageHeight) }) {}
+                                        if (out != null) layer(out.first, out.second, out.third, opaque = true) {
                                             translationY = if (tabChange) 0f else pageShift.value
-                                        }.background(windowBackground)) { leavingTab() }
+                                        }
                                     }
+                                }
+                            } else {
+                                val leavingEntry = outgoing ?: if (pendingPop) Triple(shownTop, tab, shownDepth - 1) else null
+                                val atRest = !moving && !pendingPush && leavingEntry == null
+                                val shift: () -> Float = { if (pendingPush) pageWidth else pageShift.value }
+                                if (!atRest) {
+                                    // The page under the moving one: the page Back returns to, or the one a push left.
+                                    val underIndex = if (leavingEntry != null) stack.size - 1 else stack.size - 2
+                                    val under = if (leavingEntry != null) stack.lastOrNull() else stack.getOrNull(stack.size - 2)
+                                    if (underIndex >= -1) layer(under, tab, underIndex, opaque = false,
+                                        dim = { 0.25f * (1f - shift() / pageWidth) }) {
+                                        translationX = (shift() - pageWidth) * 0.3f
+                                    }
+                                }
+                                if (leavingEntry != null) layer(leavingEntry.first, tab, leavingEntry.third, opaque = true) {
+                                    translationX = shift()
+                                } else layer(stack.lastOrNull(), tab, stack.size - 1, opaque = !atRest) {
+                                    translationX = shift()
                                 }
                             }
-                            else -> {
-                                val leavingEntry = outgoing ?: if (pendingPop) Triple(shownTop, tab, shownDepth - 1) else null
-                                val leaving = leavingEntry?.first
-                                val front = leaving ?: stack.lastOrNull()
-                                val frontIndex = leavingEntry?.third ?: (stack.size - 1)
-                                val atRest = !moving && !pendingPush && leaving == null
-                                if (!atRest) {
-                                    val under = if (leaving != null) stack.lastOrNull() else stack.getOrNull(stack.size - 2)
-                                    val underIndex = if (leaving != null) stack.size - 1 else stack.size - 2
-                                    Box(Modifier.fillMaxSize().graphicsLayer {
-                                        val shift = if (pendingPush) pageWidth else pageShift.value
-                                        translationX = (shift - pageWidth) * 0.3f
-                                    }) {
-                                        Page(under, tab, underIndex)
-                                        Box(Modifier.fillMaxSize().graphicsLayer {
-                                            val shift = if (pendingPush) pageWidth else pageShift.value
-                                            alpha = 0.25f * (1f - shift / pageWidth)
-                                        }.background(Color.Black))
-                                    }
-                                }
-                                Box(Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = if (pendingPush) pageWidth else pageShift.value
-                                }.then(if (atRest) Modifier else Modifier.background(windowBackground))) {
-                                    Page(front, tab, frontIndex)
-                                }
+                        }
+                        for (l in layers) key(l.key) {
+                            Box(Modifier.fillMaxSize().graphicsLayer(l.move).then(if (l.opaque) Modifier.background(windowBackground) else Modifier)) {
+                                pageStates.SaveableStateProvider(l.key) { renderPage(l.page, l.tabIndex) }
+                                l.dim?.let { dim -> Box(Modifier.fillMaxSize().graphicsLayer { alpha = dim() }.background(Color.Black)) }
                             }
                         }
                         // iOS's back swipe: a drag rightwards from the left edge leaves the page, as UINavigationController's
@@ -1963,3 +1951,13 @@ private enum class TabMotion { Slide, Rise, Drop }
  * gutter adds to that.
  */
 private fun railClearance(strip: Double): Double = maxOf(strip, maxOf(60.0, strip / 2 + 30.0) + 4.0)
+
+/** One page on screen during (or between) transitions: its saved-state key, what it shows, and how it is moved. */
+private class PageLayer(
+    val key: String,
+    val page: IosPage?,
+    val tabIndex: Int,
+    val opaque: Boolean,
+    val dim: (() -> Float)?,
+    val move: GraphicsLayerScope.() -> Unit,
+)
