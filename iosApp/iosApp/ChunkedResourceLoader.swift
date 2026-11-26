@@ -140,8 +140,24 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private static var injectedFailures = Int(ProcessInfo.processInfo.environment["LAYA_FAIL_RANGE"] ?? "") ?? 0
     private static let injectedStatus = Int(ProcessInfo.processInfo.environment["LAYA_FAIL_STATUS"] ?? "")
 
+    /// What went wrong on the wire, for the failure report (AudioEngine.fail): written on `queue`, read on main.
+    private let diagnosticsLock = NSLock()
+    private var _retries = 0
+    private var _lastFailure: String?
+    var diagnostics: String {
+        diagnosticsLock.lock(); defer { diagnosticsLock.unlock() }
+        return "retries=\(_retries)" + (_lastFailure.map { " last=\($0)" } ?? "")
+    }
+    private func noteFailure(_ what: String) {
+        diagnosticsLock.lock(); _lastFailure = what; diagnosticsLock.unlock()
+    }
+    private func noteRetry() {
+        diagnosticsLock.lock(); _retries += 1; diagnosticsLock.unlock()
+    }
+
     private func retry(_ loadingRequest: AVAssetResourceLoadingRequest, from start: Int64, end: Int64, attempt: Int) -> Bool {
         guard attempt < Self.retryDelays.count else { return false }
+        noteRetry()
         print("Loader: range at \(start) failed, retry \(attempt + 1)")
         queue.asyncAfter(deadline: .now() + Self.retryDelays[attempt]) {
             self.fetch(loadingRequest, from: start, end: end, attempt: attempt + 1)
@@ -178,7 +194,9 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             self.queue.async {
                 if self.cancelled.contains(key) || loadingRequest.isCancelled { return }
                 if let error {
-                    if (error as NSError).code == NSURLErrorCancelled { return }
+                    let ns = error as NSError
+                    if ns.code == NSURLErrorCancelled { return }
+                    self.noteFailure("\(ns.domain) \(ns.code) at \(start)")
                     if self.retry(loadingRequest, from: start, end: end, attempt: attempt) { return }
                     loadingRequest.finishLoading(with: error)
                     self.tasks.removeValue(forKey: key)
@@ -187,6 +205,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 let http = response as? HTTPURLResponse
                 let status = injected ?? http?.statusCode ?? 0
                 guard injected == nil, (200...299).contains(status), let data else {
+                    self.noteFailure("HTTP \(status) at \(start)")
                     if status == 429 || status >= 500 || status == 0,
                        self.retry(loadingRequest, from: start, end: end, attempt: attempt) { return }
                     if [403, 404, 410].contains(status), !self.reportedHTTPError {
@@ -291,6 +310,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     }
 
     private func fail(_ s: Serve, _ status: Int) {
+        noteFailure("stream HTTP \(status) at \(s.next)")
         if [403, 404, 410].contains(status), !reportedHTTPError {
             reportedHTTPError = true
             onHTTPError?(status)

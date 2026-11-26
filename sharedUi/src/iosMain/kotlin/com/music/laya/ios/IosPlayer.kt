@@ -1183,7 +1183,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
      * URL when the old one was refused. It is never skipped: after [MAX_RECOVERIES] it waits, paused, for Play.
      */
     private fun recover(failed: Song, reason: String, httpStatus: Int) {
-        if (httpStatus > 0) streams[failed.videoId]?.url?.let { StreamResolver.onPlaybackRefused(it, httpStatus) }
+        streams[failed.videoId]?.url?.let {
+            if (httpStatus > 0) StreamResolver.onPlaybackRefused(it, httpStatus) else StreamResolver.onPlaybackStalled(it)
+        }
         val now = NSDate().timeIntervalSinceReferenceDate
         if (recoverFor != failed.videoId || now - recoverAt > 60) { recoverFor = failed.videoId; recoverCount = 0 }
         recoverAt = now

@@ -537,14 +537,27 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // the real end arrives as a failure. That is the track ending, not breaking: move on rather than retry it.
         if atStatedEnd(item) { return endByHint(item) }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
-        let ns = item.error as NSError?
-        let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
-        let loader = loaders[ObjectIdentifier(item)]
-        print("AudioEngine: item failed (free \(os_proc_available_memory() / 1_048_576) MB): \(message) [\(ns?.domain ?? "-") \(ns?.code ?? 0) / \(under?.domain ?? "-") \(under?.code ?? 0)] length=\(loader?.knownLength.map(String.init) ?? "?") mime=\(loader?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")")
+        let detail = failureDetail(item)
+        print("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")")
         cancelFade()
         clearNextOnMain()
         player.pause()
-        listener?.onError(message: message, httpStatus: httpStatus)
+        // The detail rides along in the message: it reaches the shared TrackLog (and so a user's exported log), where
+        // a bare "The operation couldn't be completed. (0)" said nothing about what broke. Only ever logged.
+        listener?.onError(message: "\(message) \(detail)", httpStatus: httpStatus)
+    }
+
+    /// The error codes under AVFoundation's generic message, what the loader saw on the wire, and memory left.
+    private func failureDetail(_ item: AVPlayerItem) -> String {
+        let ns = item.error as NSError?
+        let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
+        let loader = loaders[ObjectIdentifier(item)]
+        let at = item.currentTime().seconds
+        return "[\(ns?.domain ?? "-") \(ns?.code ?? 0) / \(under?.domain ?? "-") \(under?.code ?? 0)]"
+            + " at=\(at.isFinite ? String(format: "%.1f", at) : "?")s"
+            + " length=\(loader?.knownLength.map(String.init) ?? "?")"
+            + (loader.map { " \($0.diagnostics)" } ?? "")
+            + " free=\(os_proc_available_memory() / 1_048_576)MB"
     }
 
     private func hasFailed(_ item: AVPlayerItem) -> Bool {
@@ -705,9 +718,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             cancelFade()
             if let now, now === nextItem { player.remove(now); dropItem(now); nextItem = nil } else { clearNextOnMain() }
             player.pause()
+            let detail = failureDetail(old) // before dropItem takes the loader's record with it
             dropItem(old)
             if failedItems.insert(ObjectIdentifier(old)).inserted {
-                listener?.onError(message: old.error?.localizedDescription ?? "Playback stopped", httpStatus: 0)
+                listener?.onError(message: "\(old.error?.localizedDescription ?? "Playback stopped") \(detail)", httpStatus: 0)
             }
             return
         }

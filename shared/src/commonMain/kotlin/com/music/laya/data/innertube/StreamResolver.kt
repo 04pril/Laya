@@ -706,6 +706,16 @@ object StreamResolver {
         recent.remove(videoId)
     }
 
+    /**
+     * A URL that broke without a refusal (it stalled until the player gave up) is not handed out again from
+     * [recent], so the retry resolves afresh instead of waiting out the same dead connection. Unlike
+     * [onPlaybackRefused] it benches no client: a stall says nothing about who minted the URL. A URL that is
+     * not in [recent] (any non-YouTube source) is left alone.
+     */
+    fun onPlaybackStalled(url: String) {
+        recent.entries.firstOrNull { it.value.url == url }?.key?.let { recent.remove(it) }
+    }
+
     // ---- Failsafe -----------------------------------------------------------
 
     /**
