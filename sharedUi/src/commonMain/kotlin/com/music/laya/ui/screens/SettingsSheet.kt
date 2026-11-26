@@ -334,14 +334,6 @@ fun SettingsScreen(
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp),
         )
         if (category == null) {
-            if (onPlayerPreferences != null) SearchableSettingsGroup(search) {
-                val title = stringResource(Res.string.player_preferences)
-                val subtitle = playerPreferencesSubtitle ?: stringResource(Res.string.android_player_preferences_subtitle)
-                row(title, subtitle, "font", "가사", "lyrics", "좋아요", "Android Auto", "CarPlay") {
-                    SettingsRow(icon = Icons.Rounded.Tune, title = title, subtitle = subtitle, onClick = onPlayerPreferences)
-                }
-            }
-
             SearchField(
                 query = searchQuery,
                 onQueryChange = { searchQuery = it },
@@ -353,19 +345,129 @@ fun SettingsScreen(
                 },
             )
 
-            if (onHomeLayout != null) SearchableSettingsGroup(search) {
-                val title = stringResource(Res.string.home_sections)
-                val subtitle = stringResource(Res.string.home_sections_subtitle)
-                row(title, subtitle, "My Playlist", "추천", "recommendations", "reorder") {
-                    SettingsRow(icon = Icons.Rounded.Apps, title = title, subtitle = subtitle, onClick = onHomeLayout)
+            // What people come to settings to change most: the player and the home page, one group under the search.
+            if (onPlayerPreferences != null || onHomeLayout != null) SearchableSettingsGroup(search) {
+                if (onPlayerPreferences != null) {
+                    val title = stringResource(Res.string.player_preferences)
+                    val subtitle = playerPreferencesSubtitle ?: stringResource(Res.string.android_player_preferences_subtitle)
+                    row(title, subtitle, "font", "가사", "lyrics", "좋아요", "Android Auto", "CarPlay") {
+                        SettingsRow(icon = Icons.Rounded.Tune, title = title, subtitle = subtitle, onClick = onPlayerPreferences)
+                    }
+                }
+                if (onHomeLayout != null) {
+                    val title = stringResource(Res.string.home_sections)
+                    val subtitle = stringResource(Res.string.home_sections_subtitle)
+                    row(title, subtitle, "My Playlist", "추천", "recommendations", "reorder") {
+                        SettingsRow(icon = Icons.Rounded.Apps, title = title, subtitle = subtitle, onClick = onHomeLayout)
+                    }
+                }
+            }
+
+            // Who is listening, where the audio comes from and at what quality, and the way out to the network:
+            // the rows set up once and revisited when something sounds wrong, together rather than two categories deep.
+            SearchableSettingsGroup(search) {
+                if (onAccountScrobbling != null) {
+                    val accountTitle = stringResource(Res.string.account_integrations)
+                    // What the row opens is the scrobbling screen, so the services it
+                    // signs into are worth typing at this field even though none of
+                    // them is named on the row itself.
+                    row(accountTitle, "scrobbling", "last.fm", "listenbrainz") {
+                        SettingsRow(
+                            icon = Icons.Rounded.Person,
+                            title = accountTitle,
+                            subtitle = account?.email?.takeIf { it.isNotBlank() }
+                                ?: stringResource(if (signedIn) Res.string.signed_in else Res.string.not_signed_in),
+                            onClick = onAccountScrobbling,
+                        )
+                    }
+                }
+                if (onSources != null) {
+                    val sourceTitle = stringResource(Res.string.source)
+                    val sourceSubtitle = stringResource(Res.string.sources_subtitle)
+                    row(sourceTitle, sourceSubtitle, "addon", "lossless") {
+                        SettingsRow(
+                            icon = Icons.Rounded.Extension,
+                            title = sourceTitle,
+                            subtitle = sourceSubtitle,
+                            onClick = onSources,
+                        )
+                    }
+                }
+                val onWifiTitle = stringResource(Res.string.on_wifi)
+                row(onWifiTitle, "wi-fi", "streaming quality", available = qualityOptions) {
+                    SettingsRow(
+                        icon = Icons.Rounded.Wifi,
+                        title = onWifiTitle,
+                        badge = stringResource(Res.string.in_use).takeIf { metered == false },
+                        value = wifiQuality.localizedLabel(),
+                        onClick = { picking = QualityTarget.WIFI },
+                    )
+                }
+                val onMobileDataTitle = stringResource(Res.string.on_mobile_data)
+                row(onMobileDataTitle, "cellular", "streaming quality", available = qualityOptions) {
+                    SettingsRow(
+                        icon = Icons.Rounded.SignalCellularAlt,
+                        title = onMobileDataTitle,
+                        badge = stringResource(Res.string.in_use).takeIf { metered == true },
+                        value = cellularQuality.localizedLabel(),
+                        onClick = { picking = QualityTarget.CELLULAR },
+                    )
+                }
+                // Sits with the quality ceilings rather than with Playback: it
+                // decides which version of a track gets fetched, the same question
+                // the two rows above answer, and not how one is played back.
+                //
+                // Greyed rather than hidden where the device can't decode E-AC-3.
+                // A missing row reads as a feature the app doesn't have; a disabled
+                // one with a reason under it is the difference between "Laya
+                // has no Atmos" and "this phone has no Dolby decoder", and only the
+                // second is true. The stored preference is left untouched either
+                // way — see [AppSettings.dolbyAtmos].
+                if (dolbyAtmosSupported != null) {
+                    val dolbyAtmosTitle = stringResource(Res.string.dolby_atmos)
+                    row(dolbyAtmosTitle, "surround", "e-ac-3") {
+                        SettingsRow(
+                            iconPainter = painterResource(Res.drawable.ic_dolby_atmos),
+                            title = dolbyAtmosTitle,
+                            subtitle = stringResource(
+                                if (dolbyAtmosSupported) {
+                                    Res.string.dolby_atmos_subtitle
+                                } else {
+                                    Res.string.dolby_atmos_unavailable
+                                },
+                            ),
+                            enabled = dolbyAtmosSupported,
+                            trailing = {
+                                Switch(
+                                    checked = dolbyAtmos && dolbyAtmosSupported,
+                                    onCheckedChange = AppSettings::setDolbyAtmos,
+                                    enabled = dolbyAtmosSupported,
+                                    colors = SwitchDefaults.colors(
+                                        checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                        checkedBorderColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                )
+                            },
+                            onClick = { AppSettings.setDolbyAtmos(!dolbyAtmos) },
+                        )
+                    }
+                }
+                if (onProxySettings != null) {
+                    val title = stringResource(Res.string.settings_proxy_title)
+                    val subtitle = "WireGuard · HTTP · HTTPS · SOCKS5"
+                    row(title, subtitle, "network", "연결") {
+                        SettingsRow(icon = Icons.Rounded.Dns, title = title, subtitle = subtitle, onClick = onProxySettings)
+                    }
                 }
             }
 
             if (!searching) {
                 val categories = SettingsCategory.entries.filter {
                     when (it) {
-                        SettingsCategory.CONNECTIONS -> onProxySettings != null || onAccountScrobbling != null ||
-                            onListenTogether != null || onWearOs != null
+                        // Proxy and account moved up to the second group; what is left here is Listen Together and Wear OS.
+                        SettingsCategory.CONNECTIONS -> onListenTogether != null || onWearOs != null
+                        // Every row it had now sits in the second group above.
+                        SettingsCategory.AUDIO_QUALITY -> false
                         SettingsCategory.DOWNLOADS -> host.hasDownloads
                         SettingsCategory.PERFORMANCE -> refreshRates != null
                         SettingsCategory.LOCAL_MUSIC -> localMusicFolder != null
@@ -384,28 +486,6 @@ fun SettingsScreen(
         }
 
         if (show(SettingsCategory.CONNECTIONS)) SearchableSettingsGroup(search) {
-            if (onProxySettings != null) {
-                val title = stringResource(Res.string.settings_proxy_title)
-                val subtitle = "WireGuard · HTTP · HTTPS · SOCKS5"
-                row(title, subtitle, "network", "연결") {
-                    SettingsRow(icon = Icons.Rounded.Dns, title = title, subtitle = subtitle, onClick = onProxySettings)
-                }
-            }
-            if (onAccountScrobbling != null) {
-                val accountTitle = stringResource(Res.string.account_integrations)
-                // What the row opens is the scrobbling screen, so the services it
-                // signs into are worth typing at this field even though none of
-                // them is named on the row itself.
-                row(accountTitle, "scrobbling", "last.fm", "listenbrainz") {
-                    SettingsRow(
-                        icon = Icons.Rounded.Person,
-                        title = accountTitle,
-                        subtitle = account?.email?.takeIf { it.isNotBlank() }
-                            ?: stringResource(if (signedIn) Res.string.signed_in else Res.string.not_signed_in),
-                        onClick = onAccountScrobbling,
-                    )
-                }
-            }
             // Sits with the account rather than with Playback: a party is up to
             // five signed-in people, and being signed in is the whole of what
             // the row needs before it will do anything.
@@ -425,87 +505,7 @@ fun SettingsScreen(
             }
         }
 
-        // The row that used to sit at the top of this group was called
-        // "Lossless / HQ Audio" and toggled `SourceRegistry.setModuleEnabled` —
-        // it switched the *module source* on and off, not lossless. Sources
-        // above lists that as the module's own row now. Lossless itself is no
-        // longer a setting at all — see
-        // [SourceResolver.requestForNow][com.music.laya.data.sources.SourceResolver.requestForNow].
-        if (show(SettingsCategory.AUDIO_QUALITY)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.audio_quality) else null) {
-            if (onSources != null) {
-                val sourceTitle = stringResource(Res.string.source)
-                val sourceSubtitle = stringResource(Res.string.sources_subtitle)
-                row(sourceTitle, sourceSubtitle, "addon", "lossless") {
-                    SettingsRow(
-                        icon = Icons.Rounded.Extension,
-                        title = sourceTitle,
-                        subtitle = sourceSubtitle,
-                        onClick = onSources,
-                    )
-                }
-            }
-            val onWifiTitle = stringResource(Res.string.on_wifi)
-            row(onWifiTitle, "wi-fi", "streaming quality", available = qualityOptions) {
-                SettingsRow(
-                    icon = Icons.Rounded.Wifi,
-                    title = onWifiTitle,
-                    badge = stringResource(Res.string.in_use).takeIf { metered == false },
-                    value = wifiQuality.localizedLabel(),
-                    onClick = { picking = QualityTarget.WIFI },
-                )
-            }
-            val onMobileDataTitle = stringResource(Res.string.on_mobile_data)
-            row(onMobileDataTitle, "cellular", "streaming quality", available = qualityOptions) {
-                SettingsRow(
-                    icon = Icons.Rounded.SignalCellularAlt,
-                    title = onMobileDataTitle,
-                    badge = stringResource(Res.string.in_use).takeIf { metered == true },
-                    value = cellularQuality.localizedLabel(),
-                    onClick = { picking = QualityTarget.CELLULAR },
-                )
-            }
-            // Sits with the quality ceilings rather than with Playback: it
-            // decides which version of a track gets fetched, the same question
-            // the two rows above answer, and not how one is played back.
-            //
-            // Greyed rather than hidden where the device can't decode E-AC-3.
-            // A missing row reads as a feature the app doesn't have; a disabled
-            // one with a reason under it is the difference between "Laya
-            // has no Atmos" and "this phone has no Dolby decoder", and only the
-            // second is true. The stored preference is left untouched either
-            // way — see [AppSettings.dolbyAtmos].
-            if (dolbyAtmosSupported != null) {
-                val dolbyAtmosTitle = stringResource(Res.string.dolby_atmos)
-                row(dolbyAtmosTitle, "surround", "e-ac-3") {
-                    SettingsRow(
-                        iconPainter = painterResource(Res.drawable.ic_dolby_atmos),
-                        title = dolbyAtmosTitle,
-                        subtitle = stringResource(
-                            if (dolbyAtmosSupported) {
-                                Res.string.dolby_atmos_subtitle
-                            } else {
-                                Res.string.dolby_atmos_unavailable
-                            },
-                        ),
-                        enabled = dolbyAtmosSupported,
-                        trailing = {
-                            Switch(
-                                checked = dolbyAtmos && dolbyAtmosSupported,
-                                onCheckedChange = AppSettings::setDolbyAtmos,
-                                enabled = dolbyAtmosSupported,
-                                colors = SwitchDefaults.colors(
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                    checkedBorderColor = MaterialTheme.colorScheme.primary,
-                                ),
-                            )
-                        },
-                        onClick = { AppSettings.setDolbyAtmos(!dolbyAtmos) },
-                    )
-                }
-            }
-        }
-
-        // Its own group rather than rows bolted onto the two above, because a
+        // Its own group rather than rows bolted onto the quality rows, because a
         // download is not a third kind of connection. The ceilings answer "what
         // does this minute cost"; these answer "what am I keeping, and when may
         // it be fetched" — and those two questions only make sense read

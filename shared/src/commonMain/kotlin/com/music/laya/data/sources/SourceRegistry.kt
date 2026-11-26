@@ -183,6 +183,13 @@ object SourceRegistry {
      * stream is budgeted further by [activeForPlayback]; downloads deliberately
      * apply no connection-quality ceiling — see [SourceResolver.forDownload].
      */
+    /**
+     * What the search screen's Addons tab asks: the enabled addons and the built-in lossless catalogues (Qobuz,
+     * Tidal). The tab took only [AddonSource] and so said "no addons" to anyone whose lossless source was a built-in.
+     * A built-in that is not verified answers no rows, as [LosslessSource.search] does.
+     */
+    fun searchableCatalogues(): List<MusicSource> = active().filter { it is AddonSource || it is LosslessSource }
+
     fun active(): List<MusicSource> =
         enabledConfigs(configs.value)
             // Not in the walk at all while it would be refused anyway: an addon

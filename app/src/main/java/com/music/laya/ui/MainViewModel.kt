@@ -83,7 +83,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
-import com.music.laya.data.sources.AddonSource
 import com.music.laya.data.sources.SourceKind
 import com.music.laya.data.sources.SourceRegistry
 import com.music.laya.data.sources.SourceResolver
@@ -1999,7 +1998,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         SearchHistory.recordAddonQuery(q)
         addonSearchJob?.cancel()
         _searchScrollReset.value += 1
-        val addons = SourceRegistry.active().filterIsInstance<AddonSource>()
+        val addons = SourceRegistry.searchableCatalogues()
         if (addons.isEmpty()) {
             _addonResults.value = UiState.Error(text(R.string.search_addons_none))
             return

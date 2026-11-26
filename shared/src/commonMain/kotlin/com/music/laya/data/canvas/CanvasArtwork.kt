@@ -62,14 +62,20 @@ data class CanvasArtwork(
  * Case, accents and punctuation all differ between YouTube Music, Apple and
  * Tidal for the same release — "Beyoncé - CRAZY IN LOVE (feat. JAY-Z)" against
  * "Beyonce Crazy in Love feat Jay Z". Fold all three away before comparing.
+ *
+ * Letters of every script are kept. Keeping only a-z erased Hangul, kana and CJK entirely: "\uC544\uC774\uC720" came out
+ * blank, so [CanvasArtwork.matches] rejected every hit for an artist written in them (no canvas, cached as a
+ * miss), and any two such titles compared equal.
  */
 fun String.normalizeForMatch(): String =
     normalizeNfd(this)
         .replace(Regex("[\u0300-\u036F]+"), "")
         .lowercase()
-        .replace(Regex("[^a-z0-9\\s]"), " ")
+        .replace(NOT_A_LETTER_OR_DIGIT, " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+private val NOT_A_LETTER_OR_DIGIT = Regex("""[^\p{L}\p{N}\s]""")
 
 /**
  * One credit string into its individual artists. Every service picks its own
