@@ -2472,7 +2472,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             browseId.startsWith(LocalGroups.PREFIX) -> LocalGroups.typeOf(browseId) ?: fallback
             browseId.startsWith("UC") -> BrowseType.ARTIST
             browseId.startsWith("MPREb") || browseId.startsWith("VLOLAK") || browseId.startsWith("OLAK") -> BrowseType.ALBUM
-            browseId.startsWith("VL") || browseId.startsWith("PL") -> BrowseType.PLAYLIST
+            browseId.startsWith("VL") || browseId.startsWith("PL") || YtMusicRepository.isRadioMix(browseId) -> BrowseType.PLAYLIST
             else -> fallback
         }
     }
@@ -2892,10 +2892,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * that loops back on itself instead of running dry.
      */
     private fun fillIn(browseId: String, token: String, artworkFallback: String?) {
+        if (YtMusicRepository.isRadioMix(browseId)) return
         fillInJobs[browseId]?.cancel()
-        // A mix's continuations never run dry, so following them grew the page for as long as it was open (#8). Its
-        // first page is the page; playing it still extends the queue (the service's own continuation, then autoplay).
-        if (YtMusicRepository.isEndlessMix(browseId)) return
         fillInJobs[browseId] = viewModelScope.launch {
             // Publish and draw the first response before spending the shared
             // connection on page two. On a long playlist the continuation can

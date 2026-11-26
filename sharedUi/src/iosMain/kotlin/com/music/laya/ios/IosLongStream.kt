@@ -5,11 +5,11 @@ import com.music.laya.data.TrackLog
 import com.music.laya.data.innertube.SidxIndex
 import com.music.laya.platform.NetHttp
 import io.ktor.http.Url
+import kotlinx.coroutines.CancellationException
 
 /**
  * A long YouTube stream (15 minutes and over) handed to AVPlayer as HLS over byte ranges of the same file, served by
- * the loopback HLS server Tidal already uses (#6). Opened directly, AVPlayer read nearly all of a 443 minute mix before
- * it played: 424 MB, 46 s on Wi-Fi, almost five minutes over a VPN.
+ * the loopback HLS server Tidal already uses (#6).
  *
  * Only long streams: an HLS item carries no audio tap, so EQ, karaoke, crossfade and skip-silence do not apply to it
  * (as for Tidal today). A 15 minute plus YouTube upload is a mix or a set, with no lossless copy or lyrics to lose,
@@ -23,22 +23,24 @@ internal object IosLongStream {
     private const val READ_TIMEOUT_MS = 8_000L
 
     /** A loopback HLS URL for [url] when it is a long YouTube audio stream whose index can be read; otherwise null. */
-    fun hlsFor(videoId: String, url: String, headers: Map<String, String>, mime: String): String? {
+    suspend fun hlsFor(videoId: String, url: String, headers: Map<String, String>, mime: String): String? {
         if (!mime.startsWith("audio/mp4") || IosCast.active) return null // Cast receivers can't reach loopback
         val seconds = runCatching { Url(url).parameters["dur"]?.toDoubleOrNull() }.getOrNull() ?: return null
-        if (seconds < MIN_SECONDS) return null
+        if (!seconds.isFinite() || seconds < MIN_SECONDS) return null
         val register = register ?: return null
         val started = MonotonicClock.nowMs()
         var want = SidxIndex.FIRST_READ
         repeat(3) {
-            val (status, head) = runCatching {
+            val (status, head) = try {
                 NetHttp.readHead(url, headers + ("Range" to "bytes=0-${want - 1}"), want, READ_TIMEOUT_MS)
-            }.getOrElse {
-                TrackLog.w("Laya", "long stream: reading the index failed (${it.message}); playing the file directly", about = videoId)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                TrackLog.w("Laya", "long stream: reading the index failed (${error::class.simpleName}); playing the file directly", about = videoId)
                 return null
             }
-            if (status !in 200..299) {
-                TrackLog.w("Laya", "long stream: index read answered HTTP $status; playing the file directly", about = videoId)
+            if (status != 206) {
+                TrackLog.w("Laya", "long stream: range probe answered HTTP $status; playing the file directly", about = videoId)
                 return null
             }
             when (val parsed = SidxIndex.parse(head)) {
@@ -55,7 +57,10 @@ internal object IosLongStream {
                     )
                     return hls
                 }
-                is SidxIndex.Result.NeedMore -> want = parsed.bytes
+                is SidxIndex.Result.NeedMore -> {
+                    if (parsed.bytes <= want) return null
+                    want = parsed.bytes
+                }
                 SidxIndex.Result.Unusable -> {
                     TrackLog.d("Laya", "long stream: no segment index at the head; playing the file directly", about = videoId)
                     return null

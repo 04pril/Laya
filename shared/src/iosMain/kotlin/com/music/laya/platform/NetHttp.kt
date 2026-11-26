@@ -52,24 +52,22 @@ actual object NetHttp {
      * The first [maxBytes] of [url]'s body and the status; the rest is never downloaded, even from a host that ignores
      * the Range in [headers] and starts sending the whole file. Fails as [execute] does after [timeoutMs].
      */
-    fun readHead(url: String, headers: Map<String, String>, maxBytes: Long, timeoutMs: Long): Pair<Int, ByteArray> = try {
-        runBlocking {
-            withTimeoutOrNull(timeoutMs) {
-                client.prepareGet(url) {
-                    headers.forEach { (k, v) -> header(k, v) }
-                }.execute { r ->
-                    val channel = r.bodyAsChannel()
-                    val out = okio.Buffer()
-                    val buffer = ByteArray(32 * 1024)
-                    while (out.size < maxBytes) {
-                        val n = channel.readAvailable(buffer, 0, minOf(buffer.size.toLong(), maxBytes - out.size).toInt())
-                        if (n < 0) break
-                        out.write(buffer, 0, n)
-                    }
-                    r.status.value to out.readByteArray()
+    suspend fun readHead(url: String, headers: Map<String, String>, maxBytes: Long, timeoutMs: Long): Pair<Int, ByteArray> = try {
+        withTimeoutOrNull(timeoutMs) {
+            client.prepareGet(url) {
+                headers.forEach { (k, v) -> header(k, v) }
+            }.execute { r ->
+                val channel = r.bodyAsChannel()
+                val out = okio.Buffer()
+                val buffer = ByteArray(32 * 1024)
+                while (out.size < maxBytes) {
+                    val n = channel.readAvailable(buffer, 0, minOf(buffer.size.toLong(), maxBytes - out.size).toInt())
+                    if (n < 0) break
+                    out.write(buffer, 0, n)
                 }
-            } ?: throw HttpException("read timed out after ${timeoutMs}ms", null)
-        }
+                r.status.value to out.readByteArray()
+            }
+        } ?: throw HttpException("read timed out after ${timeoutMs}ms", null)
     } catch (e: HttpException) {
         throw e
     } catch (e: CancellationException) {

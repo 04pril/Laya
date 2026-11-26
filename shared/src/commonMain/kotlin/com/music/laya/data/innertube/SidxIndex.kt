@@ -7,9 +7,7 @@ import kotlin.math.roundToLong
  * The segment index (`sidx`) at the head of a YouTube DASH audio file, turned into an HLS playlist over byte ranges
  * of that same file.
  *
- * Why (#6): AVPlayer opening one of these fragmented MP4s directly reads nearly the whole file before it plays. A 443
- * minute mix started after 424 MB had arrived, 46 s on Wi-Fi and almost five minutes over a VPN. Handed as HLS, it
- * fetches only the fragments it plays. Android's ExoPlayer reads the `sidx` itself, which is why it starts at once.
+ * This lets the iOS player request individual fragments during playback instead of opening the full MP4 (#6).
  *
  * The layout YouTube serves: `ftyp`, `moov` (the initialization segment), `sidx`, then `moof`/`mdat` pairs, which the
  * `sidx` references by size and duration from the first byte after itself.
@@ -41,7 +39,7 @@ object SidxIndex {
                 size = u64(head, at + 8)
                 header = 16
             }
-            if (size < header) return Result.Unusable // 0 ("to the end of the file") or corrupt: no index ahead of it
+            if (size < header || size > MAX_HEAD - at) return Result.Unusable
             when (type) {
                 "ftyp", "moov", "free", "styp" -> if (type == "moov") initEnd = at + size
                 "sidx" -> {
@@ -53,7 +51,7 @@ object SidxIndex {
             }
             at += size
         }
-        return if (at > 0 && at < MAX_HEAD) Result.NeedMore(at + 8 + 64 * 1024) else Result.Unusable
+        return if (at > 0 && at + 8 <= MAX_HEAD) Result.NeedMore(minOf(at + 8 + 64 * 1024, MAX_HEAD)) else Result.Unusable
     }
 
     private fun sidx(b: ByteArray, start: Long, end: Long, initEnd: Long): Index? {
@@ -71,16 +69,17 @@ object SidxIndex {
             if (!need(8)) return null
             p += 4 // earliest_presentation_time
             firstOffset = u32(b, p); p += 4
-        } else {
+        } else if (version == 1) {
             if (!need(16)) return null
             p += 8
             firstOffset = u64(b, p); p += 8
-        }
+        } else return null
         if (!need(4)) return null
         p += 2 // reserved
         val count = ((b[p.toInt()].toInt() and 0xFF) shl 8) or (b[p.toInt() + 1].toInt() and 0xFF)
         p += 2
         if (count == 0 || !need(count * 12L)) return null
+        if (firstOffset < 0 || firstOffset > Long.MAX_VALUE - end) return null
         var offset = end + firstOffset // anchored at the first byte after the sidx box
         val segments = ArrayList<Segment>(count)
         repeat(count) {
@@ -89,7 +88,7 @@ object SidxIndex {
             val size = word and 0x7FFFFFFFL
             val duration = u32(b, p + 4)
             p += 12
-            if (size <= 0) return null
+            if (size <= 0 || duration <= 0 || size > Long.MAX_VALUE - offset) return null
             segments += Segment(offset, size, duration.toDouble() / timescale)
             offset += size
         }

@@ -38,14 +38,6 @@ import com.music.laya.platform.ioDispatcher
 object YtMusicRepository {
 
     private const val TAG = "Laya"
-
-    /**
-     * A generated radio mix ("My Mix", "My Supermix", a song's radio: playlist ids starting `RD`). YouTube answers
-     * every continuation of one with more tracks, so a page that follows them to the end grows for as long as it is
-     * open (#8). YouTube Music shows a mix's first page and extends the play queue as it runs; detail pages here stop
-     * at the first page the same way, and playback keeps going on autoplay.
-     */
-    fun isEndlessMix(browseId: String): Boolean = browseId.removePrefix("VL").startsWith("RD")
     private val moodGenreShelfCache = ConcurrentMap<String, List<HomeShelf>>()
     // Includes unchanged video fallbacks as well as successful matches. The
     // queue prefetcher asks before a track becomes current; remembering its
@@ -692,6 +684,9 @@ object YtMusicRepository {
         if (!browseId.startsWith("VL")) page
         else page.copy(owned = InnertubeParser.parsePlaylistOwned(response))
     }
+
+    /** Radio and personalized mixes can keep generating pages for playback. */
+    fun isRadioMix(browseId: String): Boolean = browseId.removePrefix("VL").startsWith("RD")
 
     /**
      * Joins an album's metadata page to its authoritative track listing.

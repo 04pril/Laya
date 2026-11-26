@@ -88,6 +88,7 @@ final class StreamCache {
         // Cache queue only.
         private var session: URLSession?
         private var task: URLSessionDataTask?
+        private var lengthCheck: UUID?
         /// Opened when a download starts, closed when the entry goes idle.
         private var wfd: Int32 = -1
         private var skip: Int64 = 0
@@ -193,6 +194,7 @@ final class StreamCache {
                 if stillIdle, self.rfd >= 0 { close(self.rfd); self.rfd = -1 }
                 self.lock.unlock()
                 guard stillIdle else { return } // re-acquired meanwhile
+                self.lengthCheck = nil
                 self.task?.cancel(); self.task = nil
                 if self.wfd >= 0 { close(self.wfd); self.wfd = -1 }
             }
@@ -253,6 +255,31 @@ final class StreamCache {
             wake()
         }
 
+        /// A headerless 416 cannot distinguish a whole old cache file from a refused resume.
+        private func checkLengthAfter416(written: Int64) {
+            guard let session else { return fail(416) }
+            let check = UUID()
+            lengthCheck = check
+            var request = URLRequest(url: url)
+            request.httpMethod = "HEAD"
+            for (name, value) in headers where name.lowercased() != "range" {
+                request.setValue(value, forHTTPHeaderField: name)
+            }
+            request.setValue("identity", forHTTPHeaderField: "Accept-Encoding")
+            task = session.dataTask(with: request) { [weak self] _, response, error in
+                guard let self else { return }
+                self.cache.queue.async {
+                    guard self.lengthCheck == check else { return }
+                    self.lengthCheck = nil
+                    guard error == nil, let http = response as? HTTPURLResponse,
+                          http.statusCode == 200, http.expectedContentLength == written else { return self.fail(416) }
+                    self.lock.lock(); self._length = written; self.lock.unlock()
+                    self.finish()
+                }
+            }
+            task?.resume()
+        }
+
         /// Asks again from the last byte. Attempts count only failures without progress; 429 waits at least as long as Retry-After.
         private func retry(status: Int, retryAfter: Double = 0, error: NSError? = nil) {
             task = nil
@@ -283,11 +310,11 @@ final class StreamCache {
             let written = state.written
             if status == 416, written > 0, requestedOffset == written { // already have it all (a finished file from an earlier run)
                 completionHandler(.cancel)
-                // Asked from the file's own end, so 416 says that end is at or past the resource's: the file is whole.
-                // Only a total stated larger than what is on disk contradicts that. Akamai (Qobuz) states none at all.
-                let total = Self.total(http?.value(forHTTPHeaderField: "Content-Range"))
-                if let total, total > written { return fail(status) }
-                lock.lock(); _length = total ?? written; lock.unlock()
+                guard let total = Self.total(http?.value(forHTTPHeaderField: "Content-Range")) ?? state.length else {
+                    return checkLengthAfter416(written: written)
+                }
+                guard total == written else { return fail(status) }
+                lock.lock(); _length = total; lock.unlock()
                 return finish()
             }
             guard (200...299).contains(status) else {
