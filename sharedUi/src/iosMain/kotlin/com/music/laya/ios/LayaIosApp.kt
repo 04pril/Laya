@@ -971,7 +971,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
             Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                 // In landscape the notch and Dynamic Island sit on a side edge; keep pages, tab bar and mini player clear of it.
                 // An unfolded Duo's safe rectangle, which StatusBarHost used to clip the whole view to (IosExpandedPhone).
-                BoxWithConstraints(Modifier.fillMaxSize().padding(duo.padding).consumeWindowInsets(duo.padding)
+                BoxWithConstraints(Modifier.fillMaxSize().consumeWindowInsets(duo.consumed)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
                     val noPadding = PaddingValues(bottom = barHeight)
                     Box(Modifier.fillMaxSize().layerBackdrop(appBackdrop).nestedScroll(navBarScroll)) {
@@ -1515,7 +1515,10 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             onDismissPlayer = {
                                 if (player.song?.queueEntryId == song?.queueEntryId) { player.stopAndDismiss(); nowPlayingOpen = false }
                             },
-                            modifier = Modifier.align(Alignment.BottomCenter).widthIn(max = 640.dp).fillMaxWidth().onSizeChanged {
+                            // Stops short of the tab rail at the foot of the status strip, as BitChord's does.
+                            modifier = Modifier.align(if (duo.railOnRight) Alignment.BottomStart else Alignment.BottomEnd)
+                                .padding(start = if (duo.railOnRight) 0.dp else duo.strip.dp, end = if (duo.railOnRight) duo.strip.dp else 0.dp)
+                                .widthIn(max = 640.dp).fillMaxWidth().onSizeChanged {
                                 barHeight = with(density) { it.height.toDp() }
                             },
                         )
@@ -1812,19 +1815,21 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                     if (editingPartyServer) IosPartyServerEditor(onDismiss = { editingPartyServer = false })
                     if (editingSignatureApi) IosSignatureApiEditor(onDismiss = { editingSignatureApi = false })
                 }
-                // Unfolded Duo: the tabs live in the side status column's strip (see IosExpandedPhone), as BitChord's
-                // system tab bar does there; the mini player stays at the foot on its own.
+                // Duo: the tabs stand in the status column's strip, at its foot level with the mini player (see
+                // IosExpandedPhone), as BitChord's system tab bar does there; the content runs on underneath.
                 if (duo.active && onboardingComplete && !nowPlayingOpen) Box(Modifier.fillMaxSize()) {
                     GlassTabRail(
                         tabs = tabs,
                         selectedIndex = tab,
                         onTabSelected = { focusManager.clearFocus(); tab = it; stack = emptyList() },
-                        modifier = Modifier.align(if (duo.railOnRight) Alignment.CenterEnd else Alignment.CenterStart)
+                        modifier = Modifier.align(if (duo.railOnRight) Alignment.BottomEnd else Alignment.BottomStart)
+                            .windowInsetsPadding(com.music.laya.ui.components.floatingBarInsets)
                             .padding(
-                                start = if (duo.railOnRight) 0.dp else ((duo.left.dp - 56.dp) / 2).coerceAtLeast(0.dp),
-                                end = if (duo.railOnRight) ((duo.right.dp - 56.dp) / 2).coerceAtLeast(0.dp) else 0.dp,
+                                start = if (duo.railOnRight) 0.dp else ((duo.left.dp - 60.dp) / 2).coerceAtLeast(0.dp),
+                                end = if (duo.railOnRight) ((duo.right.dp - 60.dp) / 2).coerceAtLeast(0.dp) else 0.dp,
+                                bottom = 2.dp,
                             )
-                            .width(56.dp),
+                            .width(60.dp),
                     )
                 }
             }

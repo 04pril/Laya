@@ -27,12 +27,12 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -297,7 +297,7 @@ fun GlassTabRail(
     val indicator = glassIndicatorColor()
     val haptics = rememberHaptics()
     Column(
-        modifier.liquidGlass(shape = pillShape, surfaceTint = glassBarTint()).padding(vertical = 6.dp, horizontal = 4.dp),
+        modifier.liquidGlass(shape = pillShape, surfaceTint = glassBarTint()).padding(vertical = 8.dp, horizontal = 5.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         tabs.forEachIndexed { index, tab ->
@@ -306,7 +306,8 @@ fun GlassTabRail(
             val fill by animateColorAsState(if (isSelected) indicator else Color.Transparent, label = "railIndicator")
             val tint by animateColorAsState(if (isSelected) contentColor else unselectedColor, label = "railTint")
             Box(
-                Modifier.size(48.dp).clip(CircleShape).background(fill)
+                // The selection is a tall capsule filling the rail's width, as the system's vertical tab bar draws it.
+                Modifier.fillMaxWidth().height(64.dp).padding(vertical = 2.dp).clip(RoundedCornerShape(percent = 50)).background(fill)
                     .clickable {
                         if (!isSelected) haptics.play(Haptic.Select)
                         onTabSelected(index)
