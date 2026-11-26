@@ -163,7 +163,7 @@ static NSArray<NSString *> *Kinds(void) { return @[YTMUWGKindWireGuard, YTMUWGKi
     if (section == WGSectionAdvanced) return nil;
     switch (section) {
         case WGSectionTunnel:
-            return WGLOC(@"WG_FOOTER_TUNNEL", @"No system VPN or network extension is used. Laya's own requests and music streams go through WireGuard inside this app, or through the proxy server you enter. If it fails, requests fail instead of going direct. Restart the app after changing this. Requires iOS 17.");
+            return WGLOC(@"WG_FOOTER_TUNNEL", @"No system VPN or network extension is used. Laya's own requests and music streams go through WireGuard inside this app, or through the proxy server you enter. If it fails, requests fail instead of going direct. Music videos and the animated covers inside the app are fetched by the iOS player directly and do not use it. Restart the app after changing this. Requires iOS 17.");
         case WGSectionServer:
             return self.selectedWireGuard ? nil : WGLOC(@"WG_FOOTER_SERVER", @"HTTP and HTTPS use HTTP CONNECT (HTTPS encrypts the connection to the proxy and checks its certificate). Host names are resolved by the proxy server. The password is stored in the Keychain. YTMusicUltimate downloads (FFmpeg) work only with HTTP proxies; with HTTPS or SOCKS5 they are blocked instead of going direct.");
         case WGSectionProfile:
