@@ -68,6 +68,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.spring
@@ -974,45 +975,13 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))) {
                     val noPadding = PaddingValues(bottom = barHeight)
                     Box(Modifier.fillMaxSize().layerBackdrop(appBackdrop).nestedScroll(navBarScroll)) {
+                        // One page of the stack (null: the tab's own page). A function of the page so the page under the
+                        // top one can be drawn too, behind a back swipe or a push, as UINavigationController shows it.
+                        val renderPage: @Composable (IosPage?) -> Unit = { top ->
                         // A detail page draws its own header up under the status bar (as Android's edge to edge does), so only the other pages are inset here.
                         // Pages that draw behind the status bar themselves (Android's edge-to-edge detail and Replay).
-                        val onDetail = stack.lastOrNull() is IosPage.Detail || stack.lastOrNull() === IosPage.Replay
-                        // Page motion, as UINavigationController's: a pushed page slides in from the right, the page
-                        // under a popped one comes back from a little to the left, the back swipe drags the page with
-                        // the finger, and a tab switch fades in. Only the top page is composed, so the motion is its own.
-                        val pageWidth = this@BoxWithConstraints.constraints.maxWidth.toFloat().coerceAtLeast(1f)
-                        val pageShift = remember { Animatable(0f) }
-                        val pageFade = remember { Animatable(1f) }
-                        var shownDepth by remember { mutableStateOf(stack.size) }
-                        var shownTab by remember { mutableStateOf(tab) }
-                        LaunchedEffect(stack.size, tab) {
-                            val depth = stack.size
-                            when {
-                                tab != shownTab -> {
-                                    pageShift.snapTo(0f)
-                                    pageFade.snapTo(0.35f)
-                                    pageFade.animateTo(1f, tween(220))
-                                }
-                                depth > shownDepth -> {
-                                    pageFade.snapTo(1f)
-                                    pageShift.snapTo(pageWidth)
-                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
-                                }
-                                depth < shownDepth -> {
-                                    pageFade.snapTo(0.8f)
-                                    pageShift.snapTo(-pageWidth * 0.25f)
-                                    launch { pageFade.animateTo(1f, tween(260)) }
-                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
-                                }
-                            }
-                            shownDepth = depth
-                            shownTab = tab
-                        }
-                        Box(Modifier.fillMaxSize().graphicsLayer {
-                            translationX = pageShift.value
-                            alpha = pageFade.value
-                        }.then(if (onDetail) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars))) {
-                            val top = stack.lastOrNull()
+                        val onDetail = top is IosPage.Detail || top === IosPage.Replay
+                        Box(Modifier.fillMaxSize().then(if (onDetail) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars))) {
                             when (if (top == null) tab else -1) {
                             -1 -> {
                                 when (top) {
@@ -1433,15 +1402,75 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     modifier = Modifier.align(Alignment.TopStart).then(if (onDetail) Modifier.windowInsetsPadding(WindowInsets.statusBars) else Modifier).padding(8.dp)
                                         .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.7f), CircleShape),
                                 ) { Icon(Icons.AutoMirrored.Rounded.ArrowBack, "Back") }
-                                if (stack.last() === IosPage.ListenTogether) {
+                                if (top === IosPage.ListenTogether) {
                                     PartyPing(Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 20.dp))
                                 }
-                                if (stack.last() === IosPage.Replay) { // Android's Replay keeps the account in its top bar
+                                if (top === IosPage.Replay) { // Android's Replay keeps the account in its top bar
                                     Box(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(top = 8.dp, end = 8.dp)) {
                                         IosTopPill(account = account, onHistory = null, onAccount = { stack = stack + IosPage.Settings })
                                     }
                                 }
                             }
+                        }
+                        }
+                        // Page motion, as UINavigationController's. A pushed page slides in from the right over the page
+                        // it came from, which drifts a little left and dims; Back slides the page off to the right over
+                        // the one under it; the back swipe drags the page with the finger, the page under it in view;
+                        // a tab switch fades in.
+                        val pageWidth = this@BoxWithConstraints.constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                        val pageShift = remember { Animatable(0f) }
+                        val pageFade = remember { Animatable(1f) }
+                        var shownDepth by remember { mutableStateOf(stack.size) }
+                        var shownTab by remember { mutableStateOf(tab) }
+                        var shownTop by remember { mutableStateOf(stack.lastOrNull()) }
+                        // The page Back is taking away, drawn over the page under it until it has slid off.
+                        var leaving by remember { mutableStateOf<IosPage?>(null) }
+                        // Set by the back swipe, which has already slid the page off by the time the stack pops.
+                        var swipedOff by remember { mutableStateOf(false) }
+                        LaunchedEffect(stack.size, tab) {
+                            val depth = stack.size
+                            val before = shownTop
+                            shownTop = stack.lastOrNull()
+                            when {
+                                tab != shownTab -> {
+                                    leaving = null
+                                    pageShift.snapTo(0f)
+                                    pageFade.snapTo(0.35f)
+                                    pageFade.animateTo(1f, tween(220))
+                                }
+                                depth > shownDepth -> {
+                                    leaving = null
+                                    pageFade.snapTo(1f)
+                                    pageShift.snapTo(pageWidth)
+                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
+                                }
+                                depth < shownDepth && swipedOff -> swipedOff = false
+                                depth < shownDepth && before != null -> {
+                                    leaving = before
+                                    pageShift.snapTo(0f)
+                                    pageShift.animateTo(pageWidth, spring(dampingRatio = 1f, stiffness = 500f))
+                                    leaving = null
+                                    pageShift.snapTo(0f)
+                                }
+                            }
+                            shownDepth = depth
+                            shownTab = tab
+                        }
+                        val moving by remember { derivedStateOf { pageShift.value > 0.5f } }
+                        val front = leaving ?: stack.lastOrNull()
+                        if (moving && (leaving != null || stack.isNotEmpty())) {
+                            val under = if (leaving != null) stack.lastOrNull() else stack.getOrNull(stack.size - 2)
+                            Box(Modifier.fillMaxSize().graphicsLayer { translationX = (pageShift.value - pageWidth) * 0.3f }) {
+                                key(under) { renderPage(under) }
+                                Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.25f * (1f - pageShift.value / pageWidth) }
+                                    .background(Color.Black))
+                            }
+                        }
+                        Box(Modifier.fillMaxSize().graphicsLayer {
+                            translationX = pageShift.value
+                            alpha = pageFade.value
+                        }.then(if (moving) Modifier.background(windowBackground) else Modifier)) {
+                            key(front) { renderPage(front) }
                         }
                         // iOS's back swipe: a drag rightwards from the left edge leaves the page, as UINavigationController's
                         // would. Pages are a Compose stack here, so there was no back gesture at all (#18).
@@ -1457,7 +1486,9 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                                 // Off to the right with the finger's momentum, then the page under it.
                                                 pageShift.animateTo(pageWidth, tween(160))
                                                 focusManager.clearFocus()
+                                                swipedOff = true
                                                 stack = stack.dropLast(1)
+                                                pageShift.snapTo(0f) // the page under it is already in place
                                             } else settleBack()
                                         },
                                         onDragCancel = { dragged = 0f; settleBack() },
