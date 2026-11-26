@@ -120,6 +120,8 @@ private const val MAX_AUTOPLAY = 10
 
 /** How long a source ranked above YouTube gets before a track starts on YouTube regardless (Android's SUBSTITUTE_TIMEOUT_MS). */
 private const val SUBSTITUTE_TIMEOUT_MS = 20_000L
+/** How long a failed track waits for another source to find it before YouTube is asked instead. */
+private const val OTHER_SOURCE_TIMEOUT_MS = 8_000L
 /** Android's UPGRADE_MIN_REMAINING_MS: an upgrade this close to the end is not worth the swap. */
 private const val UPGRADE_MIN_REMAINING_MS = 20_000L
 
@@ -139,6 +141,8 @@ private class Opened(
     val format: StreamFormat? = null,
     /** A better copy that may still arrive (a lossless search that outlasted the quick answer). */
     val pending: Deferred<SourceStream?>? = null,
+    /** The source config that served it, when it is not YouTube: what a playback failure rules out next time. */
+    val configId: String? = null,
 )
 
 private class KaraokeSource(val url: String, val headers: Map<String, String>, val mime: String, val length: Long)
@@ -199,6 +203,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     private var preloaded = -1
     /** Tracks whose current stream came from a source above YouTube, so a failure can fall back once. */
     private val offSite = mutableSetOf<String>()
+    /** Which source config served each track's current stream, and which have failed to play it (cleared per track). */
+    private val servedBy = mutableMapOf<String, String>()
+    private val failedSources = mutableMapOf<String, MutableSet<String>>()
     /** What [resolveInto] last handed the engine for each track, so Karaoke can decode the same bytes. */
     private val streams = mutableMapOf<String, KaraokeSource>()
     /** Entry ids of the upcoming tracks as they were before Shuffle, so turning it off can restore them. */
@@ -639,6 +646,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
             sourceName = config?.displayName ?: "Source",
             format = stream.format,
             pending = pending,
+            configId = stream.sourceConfigId,
         )
     }
 
@@ -730,6 +738,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (IosLongStream.isLoopback(o.url)) streams.remove(song.videoId)
         else streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
         if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
+        if (o.configId != null) servedBy[song.videoId] = o.configId else servedBy -= song.videoId
         if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
         // Host only: addon URLs carry the owner's token in the path or query.
         TrackLog.d(
@@ -932,6 +941,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // A track starting: what the last one's versions were playing is no longer wanted.
         versionOpened.clear()
         val song = queue.getOrNull(i) ?: return
+        if (song.videoId != this.song?.videoId) failedSources.clear() // a new track: every source gets its chance again
         ListeningRecorder.onStopped() // as PlaybackService on a transition: repeat-one's second pass must not continue the first
         // YouTube history: close the outgoing play. A retry of the same track mid-way (recover) is not a new play.
         if (fromMs == 0L || song.videoId != this.song?.videoId) { PlaybackTracker.onTrackChanged(trackedSec); trackedSec = 0 }
@@ -1208,24 +1218,44 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     override fun onError(message: String, httpStatus: Int) {
         println("IosPlayer: $message ($httpStatus)")
         val failed = song ?: run { isLoading = false; return }
-        // Android's PlaybackFallback: a source that failed after being picked is not asked again, YouTube plays instead.
+        // A source that failed after being picked is not asked again (Android's PlaybackFallback). The next enabled
+        // source that has the track is, in the user's order, before YouTube: a picked Qobuz row whose file would not
+        // download went straight to YouTube even with the track on Tidal, and to silence when YouTube had none.
         if (!offSite.remove(failed.videoId)) return recover(failed, "$message ($httpStatus)", httpStatus)
         val via = NerdStats.exactSourceFor(failed.videoId) ?: "source"
-        playbackLog.event(failed.videoId, "source fallback from=${playbackLog.label(via)} to=YouTube httpStatus=$httpStatus")
-        TrackLog.w("Laya", "$via failed to play: $message ($httpStatus), falling back to YouTube", about = failed.videoId)
+        val ruledOut = failedSources.getOrPut(failed.videoId) { mutableSetOf() }
+        servedBy[failed.videoId]?.let(ruledOut::add)
         NerdStats.clearDeclared(failed.videoId)
         val at = position.positionMs
         upgradeJob?.cancel()
         startJob = scope.launch {
             runCatching {
-                val id = withContext(ioDispatcher) { youtubeSeedFor(failed) } ?: error("no YouTube match for ${failed.title}")
-                val o = withContext(ioDispatcher) { youtube(id) }
+                val other = withContext(ioDispatcher) {
+                    withTimeoutOrNull(OTHER_SOURCE_TIMEOUT_MS) {
+                        runCatching { SourceResolver.otherSourceFor(TrackMatcher.targetOf(failed), ruledOut.toSet()) }.getOrNull()
+                    }
+                }
+                val o = if (other != null) {
+                    val (source, stream) = other
+                    playbackLog.event(failed.videoId, "source fallback from=${playbackLog.label(via)} to=${playbackLog.label(source.displayName)} httpStatus=$httpStatus")
+                    TrackLog.w("Laya", "$via failed to play: $message ($httpStatus), trying ${source.displayName}", about = failed.videoId)
+                    withContext(ioDispatcher) { fromSource(stream) }
+                } else {
+                    playbackLog.event(failed.videoId, "source fallback from=${playbackLog.label(via)} to=YouTube httpStatus=$httpStatus")
+                    TrackLog.w("Laya", "$via failed to play: $message ($httpStatus), falling back to YouTube", about = failed.videoId)
+                    val id = withContext(ioDispatcher) { youtubeSeedFor(failed) } ?: error("no YouTube match for ${failed.title}")
+                    withContext(ioDispatcher) { youtube(id) }
+                }
                 if (song?.videoId != failed.videoId) return@launch
                 hand(failed, o, next = false)
                 if (at > 0) engine.seekTo(at)
                 preResolveNext()
-            }.onFailure { isLoading = false; println("IosPlayer: YouTube fallback failed: ${it.message ?: it}") }
+            }.onFailure {
+                isLoading = false
+                TrackLog.w("Laya", "fallback after $via failed: ${it.message ?: it}", about = failed.videoId)
+            }
         }
+    }
     }
 
     private var recoverFor: String? = null
