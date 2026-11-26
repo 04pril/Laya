@@ -209,6 +209,8 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     private val offSite = mutableSetOf<String>()
     /** Source configs that failed to play the current queue entry. */
     private val failedSources = mutableSetOf<String>()
+    /** Sources that never started the current track, waiting for another source to play it (see onProgress). */
+    private var unproven: Pair<String, Set<String>>? = null
     /** What [resolveInto] last handed the engine for each track, so Karaoke can decode the same bytes. */
     private val streams = mutableMapOf<String, KaraokeSource>()
     /** Entry ids of the upcoming tracks as they were before Shuffle, so turning it off can restore them. */
@@ -500,6 +502,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         playingOpened = null
         queuedOpened = null; versionOpened.clear(); offSite.clear(); streams.clear()
         failedSources.clear()
+        unproven = null
         cancelSleep()
         IosMusicVideo.stopAndDismiss()
         if (IosCast.active) IosCast.native?.pause()
@@ -1011,7 +1014,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // A track starting: what the last one's versions were playing is no longer wanted.
         versionOpened.clear()
         val song = queue.getOrNull(i) ?: return
-        if (song.queueEntryId != this.song?.queueEntryId) failedSources.clear()
+        if (song.queueEntryId != this.song?.queueEntryId) { failedSources.clear(); unproven = null }
         ListeningRecorder.onStopped() // as PlaybackService on a transition: repeat-one's second pass must not continue the first
         // YouTube history: close the outgoing play. A retry of the same track mid-way (recover) is not a new play.
         if (fromMs == 0L || song.videoId != this.song?.videoId) { PlaybackTracker.onTrackChanged(trackedSec); trackedSec = 0 }
@@ -1197,6 +1200,19 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         }
         if (handing && isLoading) return
         song?.let { playbackLog.progress(it.videoId, positionMs, durationMs, isPlaying, isBuffering) }
+        if (isPlaying) unproven?.let { (id, configs) ->
+            val now = song
+            if (now?.videoId != id) return@let
+            val serving = playingOpened?.takeIf { it.first == id }?.second?.configId
+            if (serving in configs) return@let // still (or again) the failed source: nothing proven
+            unproven = null
+            val target = TrackMatcher.targetOf(now)
+            configs.forEach { config ->
+                PlaybackFailures.keep(config, target)
+                TrackLog.d("Laya", "${SourceRegistry.config(config)?.displayName ?: "source"} could not start this track and " +
+                    "${playingOpened?.second?.sourceName ?: "another source"} could: skipping it for this track for two days", about = id)
+            }
+        }
         position.report(positionMs)
         this.durationMs = durationMs
         this.isPlaying = isPlaying
@@ -1278,6 +1294,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     override fun onAdvancedToNext() {
         if (IosCast.active) return
         failedSources.clear()
+        unproven = null
         ListeningRecorder.onStopped()
         PlaybackTracker.onTrackChanged(trackedSec)
         trackedSec = 0
@@ -1311,6 +1328,11 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         playingOpened?.takeIf { it.first == failed.videoId }?.second?.configId?.let { config ->
             failedSources.add(config)
             PlaybackFailures.record(config, TrackMatcher.targetOf(failed)) // and skipped for this track for a day
+            // Never started there, and not a rate limit: if another source now plays it, the fault was this source's
+            // own and is kept across launches (onProgress). A dead network fails every source and proves nothing.
+            if (httpStatus != 429 && position.positionMs < 1_000) {
+                unproven = failed.videoId to ((unproven?.takeIf { it.first == failed.videoId }?.second ?: emptySet()) + config)
+            }
         }
         val excluded = failedSources.toSet()
         val failedEntry = failed.queueEntryId
