@@ -804,7 +804,12 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     /** Gives the engine [o] and records what it is, for Karaoke and the nerd stats. */
     private fun hand(song: Song, o: Opened, next: Boolean, swap: Boolean = false) {
-        if (swap) swapFrom = playingOpened?.takeIf { it.first == song.videoId } else if (!next) swapFrom = null
+        if (swap) {
+            // A new request can replace a pending swap. Keep the copy the engine is still playing.
+            if (swapFrom?.first != song.videoId) swapFrom = playingOpened?.takeIf { it.first == song.videoId }
+        } else if (!next) {
+            swapFrom = null
+        }
         note(song, o, next, when {
             next -> "queued"
             swap -> "swap requested"
@@ -849,7 +854,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // Host only: addon URLs carry the owner's token in the path or query.
         TrackLog.d(
             "Laya",
-            "iOS player ${if (next) "queued" else if (why.startsWith("swap refused")) why else "opened"} via ${o.sourceName} (${runCatching { Url(o.url).host }.getOrDefault("?")}) " +
+            "iOS player $why via ${o.sourceName} (${runCatching { Url(o.url).host }.getOrDefault("?")}) " +
                 "mime=${o.mime} declared=${o.format?.summary ?: "nothing"} ua=${if (o.headers.containsKey("User-Agent")) "custom" else "default"}",
             about = song.videoId,
         )
@@ -1040,6 +1045,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // A track starting: what the last one's versions were playing is no longer wanted.
         versionOpened.clear()
         val song = queue.getOrNull(i) ?: return
+        swapFrom = null
         if (song.queueEntryId != this.song?.queueEntryId) { failedSources.clear(); unproven = null }
         ListeningRecorder.onStopped() // as PlaybackService on a transition: repeat-one's second pass must not continue the first
         // YouTube history: close the outgoing play. A retry of the same track mid-way (recover) is not a new play.

@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 
 @main
 struct PosterSurfaceRendererTests {
-    static let space = CGColorSpace(name: CGColorSpace.sRGB)!
+    static let space = CGColorSpace(name: CGColorSpace.displayP3)!
     static func solid(_ colour: CGColor) -> CGImage {
         let context = CGContext(data: nil, width: 32, height: 32, bitsPerComponent: 8, bytesPerRow: 128,
             space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
@@ -17,7 +17,7 @@ struct PosterSurfaceRendererTests {
     static func bytes(_ image: CGImage) -> Data { image.dataProvider!.data! as Data }
     static func opaque(_ image: CGImage) {
         precondition(image.bitsPerComponent == 8 && image.bitsPerPixel == 32, "Use fixed standard-range pixels")
-        precondition(image.colorSpace?.name == CGColorSpace.sRGB, "Use explicit sRGB")
+        precondition(image.colorSpace?.name == CGColorSpace.displayP3, "Use explicit Display P3")
         let data = bytes(image)
         for y in 0..<image.height {
             for x in 0..<image.width {
@@ -55,7 +55,10 @@ struct PosterSurfaceRendererTests {
         opaque(placeholder)
         precondition(PosterSurfaceRenderer.render(cover: nil, wash: nil, size: .zero, small: true, scale: 2) == nil)
         precondition(PosterSurfaceRenderer.render(cover: nil, wash: nil, size: CGSize(width: 158, height: 158), small: true, scale: 0) == nil)
-        print("PASS: poster media uses identical light/dark 8-bit sRGB pixels; all pixels opaque at both sizes and fractional bounds")
+        let wideRed = CGColor(colorSpace: space, components: [1, 0, 0, 1])!
+        let wideWash = PosterSurfaceRenderer.render(cover: nil, wash: solid(wideRed), size: CGSize(width: 32, height: 32), small: true, scale: 1)!
+        precondition(bytes(wideWash).prefix(4).elementsEqual([255, 0, 0, 255]), "Preserve a Display P3 primary outside sRGB")
+        print("PASS: poster media preserves Display P3 and uses identical opaque 8-bit pixels in light/dark at both sizes and fractional bounds")
         if CommandLine.arguments.count == 4 {
             let cover = load(CommandLine.arguments[1]), wash = load(CommandLine.arguments[2]), directory = CommandLine.arguments[3]
             for (name, small, size) in [("medium", false, CGSize(width: 338, height: 158)), ("small", true, CGSize(width: 158, height: 158))] {
