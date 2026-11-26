@@ -34,6 +34,12 @@ internal object IosSourcesHost : SourcesHost {
 
     override var jioSaavnOptInDone = true
 
+    // Beside the list itself in the Keychain, so a reinstall that keeps one keeps the other.
+    override var sourceOrderUnified: Boolean
+        get() = Keychain.get(ORDER_KEY) == "1"
+        set(value) = Keychain.set(ORDER_KEY, if (value) "1" else null)
+
     private const val KEY = "sources"
+    private const val ORDER_KEY = "sources_order_unified_v1"
     private val PLAYABLE = setOf("flac", "alac", "wav", "aiff", "mp3", "aac", "he-aac", "m4a", "mp4")
 }

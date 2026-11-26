@@ -244,8 +244,10 @@ fun SourcesScreen(
             // what order the sources are tried in, and restarting the count
             // under a second heading would break the one thing this screen is
             // for.
-            val addons = configs.filter { it.kind.isUserAdded }
-            val fixed = configs.filterNot { it.kind.isUserAdded }
+            // The draggable part holds the built-in Qobuz and Tidal too: they are tried in the order the user sets
+            // among the addons (SourceKind.isOrderable). JioSaavn and YouTube stay fixed at the end.
+            val addons = configs.filter { it.kind.isOrderable }
+            val fixed = configs.filterNot { it.kind.isOrderable }
                 .sortedBy { it.kind.rank }
 
             val row: @Composable (Int, SourceConfig, (@Composable () -> Unit)?) -> Unit =

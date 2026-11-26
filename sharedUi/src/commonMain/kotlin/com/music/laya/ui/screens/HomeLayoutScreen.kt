@@ -13,9 +13,8 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -53,7 +52,11 @@ import com.music.laya.data.settings.HomeLayoutPreferences
 import com.music.laya.data.settings.HomePlaylist
 import com.music.laya.data.settings.HomeSection
 import com.music.laya.sharedui.resources.*
+import com.music.laya.ui.components.AutoScrollWhileDragging
+import com.music.laya.ui.components.DragHandle
 import com.music.laya.ui.components.SearchField
+import com.music.laya.ui.components.reorderableRow
+import com.music.laya.ui.components.rememberReorderState
 import com.music.laya.ui.player.appLanguageTag
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
@@ -75,7 +78,10 @@ fun HomeLayoutScreen(
     val korean = appLanguageTag().startsWith("ko")
     val selected = layout.playlists(profile)
     var choosing by remember(profile) { mutableStateOf(false) }
-    LazyColumn(modifier = Modifier.fillMaxSize(), contentPadding = contentPadding) {
+    val listState = rememberLazyListState()
+    val reorder = rememberReorderState(order) { HomeLayoutPreferences.setOrder(it) }
+    AutoScrollWhileDragging(reorder, listState)
+    LazyColumn(modifier = Modifier.fillMaxSize(), state = listState, contentPadding = contentPadding) {
         item {
             Text(
                 stringResource(Res.string.home_sections),
@@ -96,35 +102,29 @@ fun HomeLayoutScreen(
                 )
             }
         }
-        items(order, key = { it }) { id ->
+        items(reorder.order, key = { it }) { id ->
             val section = known[id]
             val title = if (section != null) {
                 if (korean) section.korean else section.english
             } else observed[id]?.title?.let { localizeShelfTitle(it) } ?: id.removePrefix("feed:")
-            val index = order.indexOf(id)
             ListItem(
+                modifier = Modifier.reorderableRow(reorder, id),
                 headlineContent = { Text(title) },
+                // The grip leads, the switch trails: dragging is done at the left edge, away from the toggle.
+                leadingContent = {
+                    DragHandle(
+                        reorder, id,
+                        contentDescription = stringResource(Res.string.drag_to_reorder),
+                        modifier = Modifier.size(40.dp).padding(8.dp),
+                    )
+                },
                 trailingContent = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        IconButton(
-                            onClick = { HomeLayoutPreferences.setOrder(order.moving(index, -1)) },
-                            enabled = index > 0,
-                        ) {
-                            Icon(Icons.Rounded.KeyboardArrowUp, stringResource(Res.string.home_move_section_up, title))
-                        }
-                        IconButton(
-                            onClick = { HomeLayoutPreferences.setOrder(order.moving(index, 1)) },
-                            enabled = index < order.lastIndex,
-                        ) {
-                            Icon(Icons.Rounded.KeyboardArrowDown, stringResource(Res.string.home_move_section_down, title))
-                        }
-                        Switch(
-                            checked = layout.isVisible(id, profile),
-                            onCheckedChange = { HomeLayoutPreferences.setVisible(id, it) },
-                            enabled = section != HomeSection.MY_PLAYLIST || selected.isNotEmpty(),
-                            modifier = Modifier.semantics { contentDescription = title },
-                        )
-                    }
+                    Switch(
+                        checked = layout.isVisible(id, profile),
+                        onCheckedChange = { HomeLayoutPreferences.setVisible(id, it) },
+                        enabled = section != HomeSection.MY_PLAYLIST || selected.isNotEmpty(),
+                        modifier = Modifier.semantics { contentDescription = title },
+                    )
                 },
             )
         }
@@ -151,9 +151,6 @@ fun HomeLayoutScreen(
         )
     }
 }
-
-private fun List<String>.moving(from: Int, delta: Int): List<String> =
-    toMutableList().apply { val id = removeAt(from); add(from + delta, id) }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

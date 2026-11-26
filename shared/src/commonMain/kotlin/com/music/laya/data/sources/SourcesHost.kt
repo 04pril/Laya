@@ -37,6 +37,9 @@ interface SourcesHost {
     /** The persisted source list (JSON) and the one-time JioSaavn opt-in flag. */
     var storedSources: String?
     var jioSaavnOptInDone: Boolean
+
+    /** Whether the stored list has been put into the unified order once ([SourceRegistry.unifiedOrder]). */
+    var sourceOrderUnified: Boolean
 }
 
 /** [raw] as an http(s) URL with a host, or null — the check OkHttp's `toHttpUrlOrNull` made. */

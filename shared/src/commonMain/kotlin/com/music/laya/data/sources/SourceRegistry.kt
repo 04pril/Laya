@@ -87,6 +87,7 @@ object SourceRegistry {
     var host: SourcesHost = object : SourcesHost {
         override var storedSources: String? = null
         override var jioSaavnOptInDone = false
+        override var sourceOrderUnified = false
     }
 
     private var initialised = false
@@ -111,19 +112,29 @@ object SourceRegistry {
 
         val stored = host.storedSources?.let(::decodeStored) ?: emptyList()
         val jioOptInMigrationDone = host.jioSaavnOptInDone
+        val orderUnified = host.sourceOrderUnified
         val after = sourcesForInit(stored, forceJioSaavnOff = !jioOptInMigrationDone)
             .filter { host.supports(it.kind) }
+            .let { if (orderUnified) it else unifiedOrder(it) }
 
         // Publish state and the migration marker in one preferences edit. If a
         // process dies after recording the marker but before recording the
         // disabled source, the next launch would otherwise believe the forced
         // opt-out had already happened and silently restore the old on state.
         publish(after, persist = false)
-        if (after != stored || !jioOptInMigrationDone) {
+        if (after != stored || !jioOptInMigrationDone || !orderUnified) {
             host.storedSources = json.encodeToString(ListSerializer(SourceConfig.serializer()), after)
             host.jioSaavnOptInDone = true
+            host.sourceOrderUnified = true
         }
     }
+
+    /**
+     * The stored list put into the order sources were tried in before Qobuz and Tidal could be placed among the
+     * addons: addons first, then the built-ins by rank. Run once ([SourcesHost.sourceOrderUnified]), so that from then
+     * on the stored order is the priority for every orderable source and nobody's order changes on the upgrade.
+     */
+    fun unifiedOrder(stored: List<SourceConfig>): List<SourceConfig> = stored.sortedBy { it.kind.rank }
 
     /**
      * Built-in seeding and one-time source migrations, kept pure for tests.
@@ -183,21 +194,23 @@ object SourceRegistry {
      * stream is budgeted further by [activeForPlayback]; downloads deliberately
      * apply no connection-quality ceiling — see [SourceResolver.forDownload].
      */
-    /**
-     * What the search screen's Addons tab asks: the enabled addons and the built-in lossless catalogues (Qobuz,
-     * Tidal). The tab took only [AddonSource] and so said "no addons" to anyone whose lossless source was a built-in.
-     * A built-in that is not verified answers no rows, as [LosslessSource.search] does.
-     */
-    fun searchableCatalogues(): List<MusicSource> = active().filter { it is AddonSource || it is LosslessSource }
-
     fun active(): List<MusicSource> =
         enabledConfigs(configs.value)
             // Not in the walk at all while it would be refused anyway: an addon
             // that asked for a lossless output costs nothing — not even a timed
             // out search — while there isn't one. See [SourceConfig.checkValidLossless].
             .filterNot { it.awaitsLosslessOutput }
-            .sortedBy { it.kind.rank }
+            // The user's own order for everything they may order (addons and the built-in lossless catalogues),
+            // kept by the stable sort; then JioSaavn, then YouTube.
+            .sortedBy { if (it.kind.isOrderable) SourceKind.USER_ADDED else it.kind.rank }
             .mapNotNull { instances[it.id] }
+
+    /**
+     * What the search screen's Addons tab asks: the enabled addons and the built-in lossless catalogues (Qobuz,
+     * Tidal). The tab took only [AddonSource] and so said "no addons" to anyone whose lossless source was a built-in.
+     * A built-in that is not verified answers no rows, as [LosslessSource.search] does.
+     */
+    fun searchableCatalogues(): List<MusicSource> = active().filter { it is AddonSource || it is LosslessSource }
 
     /**
      * [active], minus the addons whose manifest said `allowDownloads: 0`. A
@@ -328,18 +341,26 @@ object SourceRegistry {
      * Ids that name nothing are dropped and addons the caller forgot to mention
      * are appended, so a list that has moved on since the drag started — an
      * addon removed on another screen, say — reorders what it can rather than
-     * deleting the rest. Everything that is not an addon keeps its place, since
-     * its rank is decided by its kind and is not the user's to set.
+     * deleting the rest. JioSaavn and YouTube keep their places: their rank is
+     * decided by their kind. The built-in Qobuz and Tidal are the user's to
+     * place among the addons ([SourceKind.isOrderable]).
      */
     fun reorderAddons(orderedIds: List<String>) {
-        val addons = configs.value.filter { it.kind.isUserAdded }
-        if (addons.size < 2) return
-        val byId = addons.associateBy { it.id }
-        val moved = orderedIds.mapNotNull(byId::get)
-        val missed = addons.filterNot { config -> moved.any { it.id == config.id } }
+        val current = configs.value
+        // A list naming a built-in lossless source reorders everything orderable (the shared Sources page); one naming
+        // addons only reorders the addons among their own places (Android's addon drag), as it always did.
+        val all = current.any { it.kind.isLossless && it.id in orderedIds }
+        val inScope: (SourceConfig) -> Boolean = if (all) { c -> c.kind.isOrderable } else { c -> c.kind.isUserAdded }
+        val members = current.filter(inScope)
+        if (members.size < 2) return
+        val byId = members.associateBy { it.id }
+        val moved = orderedIds.distinct().mapNotNull(byId::get)
+        val missed = members.filterNot { config -> moved.any { it.id == config.id } }
         val reordered = moved + missed
-        if (reordered.map { it.id } == addons.map { it.id }) return
-        publish(reordered + configs.value.filterNot { it.kind.isUserAdded })
+        if (reordered.map { it.id } == members.map { it.id }) return
+        // Into the places the members held, so nothing outside the scope moves.
+        val queue = ArrayDeque(reordered)
+        publish(current.map { if (inScope(it)) queue.removeFirst() else it })
     }
 
     private fun publish(next: List<SourceConfig>, persist: Boolean = true) {

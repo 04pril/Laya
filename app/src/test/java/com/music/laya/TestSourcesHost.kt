@@ -8,5 +8,6 @@ fun useAndroidSourcesHost() {
     SourceRegistry.host = object : AndroidSourcesBehaviour() {
         override var storedSources: String? = null
         override var jioSaavnOptInDone = false
+        override var sourceOrderUnified = false
     }
 }
