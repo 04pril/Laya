@@ -206,9 +206,8 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     private var preloaded = -1
     /** Tracks whose current stream came from a source above YouTube, so a failure can fall back once. */
     private val offSite = mutableSetOf<String>()
-    /** Which source config served each track's current stream, and which have failed to play it (cleared per track). */
-    private val servedBy = mutableMapOf<String, String>()
-    private val failedSources = mutableMapOf<String, MutableSet<String>>()
+    /** Source configs that failed to play the current queue entry. */
+    private val failedSources = mutableSetOf<String>()
     /** What [resolveInto] last handed the engine for each track, so Karaoke can decode the same bytes. */
     private val streams = mutableMapOf<String, KaraokeSource>()
     /** Entry ids of the upcoming tracks as they were before Shuffle, so turning it off can restore them. */
@@ -499,6 +498,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         IosLyricsAlign.offsetMs.value = 0
         playingOpened = null
         queuedOpened = null; versionOpened.clear(); offSite.clear(); streams.clear()
+        failedSources.clear()
         cancelSleep()
         IosMusicVideo.stopAndDismiss()
         if (IosCast.active) IosCast.native?.pause()
@@ -686,8 +686,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // googlevideo URLs carry the format as ?mime=audio%2Fmp4
         val mime = url.substringAfter("mime=", "audio%2Fmp4").substringBefore('&').replace("%2F", "/")
         val headers = StreamResolver.mediaHeadersFor(url)
-        // A mix or set of 15 minutes and more: AVPlayer reads nearly all of such a file before it plays (#6), so it
-        // goes as HLS over the same file's byte ranges instead (IosLongStream).
+        // Long audio can use HLS over the same file's byte ranges when it has a usable index.
         IosLongStream.hlsFor(videoId, url, headers, mime)?.let { hls ->
             return Opened(hls, emptyMap(), "application/vnd.apple.mpegurl", -1L, "YouTube")
         }
@@ -798,7 +797,6 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (IosLongStream.isLoopback(o.url)) streams.remove(song.videoId)
         else streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
         if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
-        if (o.configId != null) servedBy[song.videoId] = o.configId else servedBy -= song.videoId
         if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
         // Host only: addon URLs carry the owner's token in the path or query.
         TrackLog.d(
@@ -1001,7 +999,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // A track starting: what the last one's versions were playing is no longer wanted.
         versionOpened.clear()
         val song = queue.getOrNull(i) ?: return
-        if (song.videoId != this.song?.videoId) failedSources.clear() // a new track: every source gets its chance again
+        if (song.queueEntryId != this.song?.queueEntryId) failedSources.clear()
         ListeningRecorder.onStopped() // as PlaybackService on a transition: repeat-one's second pass must not continue the first
         // YouTube history: close the outgoing play. A retry of the same track mid-way (recover) is not a new play.
         if (fromMs == 0L || song.videoId != this.song?.videoId) { PlaybackTracker.onTrackChanged(trackedSec); trackedSec = 0 }
@@ -1267,6 +1265,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     override fun onAdvancedToNext() {
         if (IosCast.active) return
+        failedSources.clear()
         ListeningRecorder.onStopped()
         PlaybackTracker.onTrackChanged(trackedSec)
         trackedSec = 0
@@ -1276,6 +1275,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // A gapless or blended start never went through hand(next = false): align its lyrics here, or clear the last
         // track's shift.
         val queued = queuedOpened?.takeIf { it.first == song?.videoId }?.second
+        playingOpened = queuedOpened?.takeIf { it.first == song?.videoId }
         queuedOpened = null
         val now = song
         now?.let { playbackLog.start(it.videoId, 0, "queue advanced") }
@@ -1296,16 +1296,18 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // download went straight to YouTube even with the track on Tidal, and to silence when YouTube had none.
         if (!offSite.remove(failed.videoId)) return recover(failed, "$message ($httpStatus)", httpStatus)
         val via = NerdStats.exactSourceFor(failed.videoId) ?: "source"
-        val ruledOut = failedSources.getOrPut(failed.videoId) { mutableSetOf() }
-        servedBy[failed.videoId]?.let(ruledOut::add)
+        playingOpened?.takeIf { it.first == failed.videoId }?.second?.configId?.let(failedSources::add)
+        val excluded = failedSources.toSet()
+        val failedEntry = failed.queueEntryId
         NerdStats.clearDeclared(failed.videoId)
         val at = position.positionMs
+        isLoading = true
         upgradeJob?.cancel()
         startJob = scope.launch {
             runCatching {
                 val other = withContext(ioDispatcher) {
                     withTimeoutOrNull(OTHER_SOURCE_TIMEOUT_MS) {
-                        runCatching { SourceResolver.otherSourceFor(TrackMatcher.targetOf(failed), ruledOut.toSet()) }.getOrNull()
+                        SourceResolver.otherSourceFor(TrackMatcher.targetOf(failed), excluded)
                     }
                 }
                 val o = if (other != null) {
@@ -1319,16 +1321,16 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
                     val id = withContext(ioDispatcher) { youtubeSeedFor(failed) } ?: error("no YouTube match for ${failed.title}")
                     withContext(ioDispatcher) { youtube(id) }
                 }
-                if (song?.videoId != failed.videoId) return@launch
+                if (song?.queueEntryId != failedEntry || song?.videoId != failed.videoId) return@launch
                 hand(failed, o, next = false)
                 if (at > 0) engine.seekTo(at)
                 preResolveNext()
             }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException || song?.queueEntryId != failedEntry) return@onFailure
                 isLoading = false
-                TrackLog.w("Laya", "fallback after $via failed: ${it.message ?: it}", about = failed.videoId)
+                TrackLog.w("Laya", "fallback after $via failed (${it::class.simpleName})", about = failed.videoId)
             }
         }
-    }
     }
 
     private var recoverFor: String? = null

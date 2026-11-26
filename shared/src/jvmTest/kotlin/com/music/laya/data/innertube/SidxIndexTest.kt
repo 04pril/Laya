@@ -6,6 +6,12 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 class SidxIndexTest {
+    @Test
+    fun `a malformed extended box cannot request an unbounded read`() {
+        val unboundedSidx = u32(1) + "sidx".encodeToByteArray() + u32(0) + u32(1L shl 30)
+        assertIs<SidxIndex.Result.Unusable>(SidxIndex.parse(ftyp + moov + unboundedSidx))
+    }
+
     private fun box(type: String, body: ByteArray): ByteArray = u32(8L + body.size) + type.encodeToByteArray() + body
     private fun u32(v: Long) = byteArrayOf((v shr 24).toByte(), (v shr 16).toByte(), (v shr 8).toByte(), v.toByte())
     private fun u16(v: Int) = byteArrayOf((v shr 8).toByte(), v.toByte())
