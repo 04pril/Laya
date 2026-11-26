@@ -667,10 +667,8 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                     async { withTimeoutOrNull(12_000) { runCatching { addon.search(q, limit = 20) }.getOrDefault(emptyList()) } ?: emptyList() }
                 }.map { it.await() }
             }
-            // Round-robin, so no single catalogue buries the others.
-            addonResults = UiState.Success(buildList {
-                for (i in 0 until (perAddon.maxOfOrNull { it.size } ?: 0)) perAddon.forEach { rows -> rows.getOrNull(i)?.let(::add) }
-            })
+            // Round-robin, so no single catalogue buries the others; the same recording once (CatalogueResults).
+            addonResults = UiState.Success(com.music.laya.data.sources.CatalogueResults.merge(perAddon))
         }
     }
     var searchContinuation by remember { mutableStateOf<String?>(null) }

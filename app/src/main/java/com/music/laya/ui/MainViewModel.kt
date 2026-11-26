@@ -2014,10 +2014,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     }
                 }.map { it.await() }
             }
-            val merged = buildList {
-                val longest = perAddon.maxOfOrNull { it.size } ?: 0
-                for (i in 0 until longest) perAddon.forEach { rows -> rows.getOrNull(i)?.let(::add) }
-            }
+            // Round-robin, the same recording once (CatalogueResults).
+            val merged = com.music.laya.data.sources.CatalogueResults.merge(perAddon)
             _addonResults.value = UiState.Success(merged)
         }
     }
