@@ -1417,7 +1417,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         // it came from, which drifts a little left and dims; Back slides the page off to the right over
                         // the one under it; the back swipe drags the page with the finger, the page under it in view;
                         // a tab switch fades in.
-                        val pageWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                        val pageWidth = this@BoxWithConstraints.constraints.maxWidth.toFloat().coerceAtLeast(1f)
                         val pageShift = remember { Animatable(0f) }
                         val pageFade = remember { Animatable(1f) }
                         var shownDepth by remember { mutableStateOf(stack.size) }

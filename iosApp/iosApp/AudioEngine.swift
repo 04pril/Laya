@@ -431,7 +431,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     func pause() { onMain { self.pauseOnMain() } }
 
     private func pauseOnMain() {
-        cancelSwap()
+        if cancelSwap() { swapRefused("canceled by pause") }
         pausedByInterruption = false
         resumeAfterSeek = false
         startAskedAt = nil // a start paused before it sounded is not timed
@@ -450,7 +450,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     func seekTo(positionMs: Int64) { onMain { self.seekOnMain(positionMs: positionMs) } }
 
     private func seekOnMain(positionMs: Int64) {
-        cancelSwap()
+        if cancelSwap() { swapRefused("canceled by seek") }
         cancelFade()
         guard let item = player.currentItem, item.status == .readyToPlay else {
             pendingSeekMs = positionMs
@@ -1233,7 +1233,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         }
         deck.seek(to: CMTime(seconds: target, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] done in
             DispatchQueue.main.async {
-                guard let self, gen == self.swapGen, done else { return }
+                guard let self, gen == self.swapGen else { return }
+                guard done else { return retry() }
                 guard running else { return self.swapCommit(deck, item, gen) }
                 // Buffered at the cue before it is asked to sound. Started cold, a streaming FLAC stalls at once, and a deck
                 // started with automaticallyWaitsToMinimizeStalling off stays stopped after a stall (Play had to be pressed).
@@ -1299,12 +1300,17 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func swapRefused(_ why: String, warn: Bool = false) {
         nativeLog("AudioEngine: source swap \(why)", warn: warn)
         listener?.onSourceSwap(applied: false)
+        if let item = currentItem, item === player.currentItem, item.status == .readyToPlay {
+            reportAudioFormat(item)
+        }
     }
 
-    private func cancelSwap(resume: Bool = true) {
+    @discardableResult
+    private func cancelSwap(resume: Bool = true) -> Bool {
         swapGen += 1
+        let wasDeferred = deferredSwap != nil
         deferredSwap = nil
-        guard let item = swapItem else { return }
+        guard let item = swapItem else { return wasDeferred }
         swapItem = nil
         swapObservation = nil
         idle.pause()
@@ -1312,6 +1318,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         idle.volume = appGain
         dropItem(item)
         if resume { materializeNextIfDue() }
+        return true
     }
 
     // MARK: - Crossfade
