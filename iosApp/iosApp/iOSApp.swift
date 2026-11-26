@@ -92,7 +92,8 @@ final class StatusBarHost: UIViewController {
             ? bounds.intersection(safeFrame) : bounds
         let frame = safe.isNull || safe.isEmpty ? bounds : safe
         IosExpandedPhone.shared.update(left: Double(frame.minX - bounds.minX), top: Double(frame.minY - bounds.minY),
-                                       right: Double(bounds.maxX - frame.maxX), bottom: Double(bounds.maxY - frame.maxY))
+                                       right: Double(bounds.maxX - frame.maxX), bottom: Double(bounds.maxY - frame.maxY),
+                                       unfolded: min(bounds.width, bounds.height) >= 600)
         if content.view.frame != bounds { content.view.frame = bounds }
     }
 

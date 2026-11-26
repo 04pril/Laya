@@ -77,6 +77,7 @@ internal object IosPlayerHost : PlayerHost {
     // Use available window space, including an unfolded phone, rather than the device name.
     override val supportsExpandedPlayerLayout = true
     override val isExpandedPhone: Boolean get() = IosExpandedPhone.insets.value.active
+    override val isUnfoldedPhone: Boolean get() = IosExpandedPhone.insets.value.let { it.active && it.unfolded }
     override val hasNativeOutputGlyph = true
     override val isIPad: Boolean get() = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
 
