@@ -678,7 +678,13 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         val url = StreamResolver.resolve(videoId)
         // googlevideo URLs carry the format as ?mime=audio%2Fmp4
         val mime = url.substringAfter("mime=", "audio%2Fmp4").substringBefore('&').replace("%2F", "/")
-        return Opened(url, StreamResolver.mediaHeadersFor(url), mime, StreamResolver.contentLength(videoId) ?: -1L, "YouTube")
+        val headers = StreamResolver.mediaHeadersFor(url)
+        // A mix or set of 15 minutes and more: AVPlayer reads nearly all of such a file before it plays (#6), so it
+        // goes as HLS over the same file's byte ranges instead (IosLongStream).
+        IosLongStream.hlsFor(videoId, url, headers, mime)?.let { hls ->
+            return Opened(hls, emptyMap(), "application/vnd.apple.mpegurl", -1L, "YouTube")
+        }
+        return Opened(url, headers, mime, StreamResolver.contentLength(videoId) ?: -1L, "YouTube")
     }
 
     /** A source's answer as the engine wants it. A YouTube answer goes back through [youtube] for its headers and length. */
@@ -780,7 +786,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
             swap -> "swap requested"
             else -> "opened"
         })
-        streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
+        // A loopback HLS playlist has no file behind it to decode: karaoke and analysis stay off for it.
+        if (IosLongStream.isLoopback(o.url)) streams.remove(song.videoId)
+        else streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
         if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
         if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
         // Host only: addon URLs carry the owner's token in the path or query.

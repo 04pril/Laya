@@ -50,7 +50,8 @@ import kotlinx.coroutines.launch
 fun MainViewController(
     engine: AudioEngine,
     cast: CastNative,
-    registerTidalHls: (playlist: String, segments: List<String>) -> String?,
+    /** Serves an HLS index on loopback; every segment is fetched with [headers] through the app's own URLSession. */
+    registerTidalHls: (playlist: String, segments: List<String>, headers: Map<String, String>) -> String?,
     onStatusBarLight: (Boolean) -> Unit,
 ): UIViewController {
     // Not NSLog: Kotlin strings passed through its C varargs crash (EXC_BAD_ACCESS).
@@ -102,9 +103,10 @@ fun MainViewController(
     LosslessStore.tidalPlaybackUrl = { manifest ->
         runCatching { DashAudio.parse(manifest, requireFlac = true) }.getOrNull()?.let { plan ->
             val playlist = DashAudio.playlist(plan) { "segment-$it.m4s" }
-            registerTidalHls(playlist, listOf(plan.initialization) + plan.media)
+            registerTidalHls(playlist, listOf(plan.initialization) + plan.media, emptyMap())
         }
     }
+    IosLongStream.register = registerTidalHls
     // A session that ran out while the app was closed is reported (and its source switched off) like any other.
     com.music.laya.data.sources.lossless.LosslessProvider.all.forEach { it.session.reload() }
     SourceRegistry.init(IosSourcesHost)

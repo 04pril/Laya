@@ -46,8 +46,8 @@ struct ComposeView: UIViewControllerRepresentable {
         let host = StatusBarHost()
         host.embed(MainViewControllerKt.MainViewController(
             engine: iOSApp.audioEngine, cast: iOSApp.castNative,
-            registerTidalHls: { playlist, segments in
-                TidalHlsServer.shared.register(playlist: playlist, segments: segments)
+            registerTidalHls: { playlist, segments, headers in
+                TidalHlsServer.shared.register(playlist: playlist, segments: segments, headers: headers)
             },
             onStatusBarLight: { light in host.light = light.boolValue }
         ))
