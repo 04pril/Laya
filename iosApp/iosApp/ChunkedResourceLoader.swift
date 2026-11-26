@@ -8,8 +8,8 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     let queue = DispatchQueue(label: "laya.resource-loader")
     let proxyURL: URL
-    var onHTTPError: ((Int) -> Void)?
-    private(set) var reportedHTTPError = false
+    private var onTerminalFailure: ((Int) -> Void)?
+    private var terminalFailure: Int?
     /// The stream's size once a response has stated it (or the caller knew it).
     var streamLength: Int64? { knownLength }
     /// FLAC's STREAMINFO as read from the bytes actually served, set when the first chunk lands.
@@ -86,6 +86,14 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             self.tasks.removeAll()
             self.session.invalidateAndCancel()
             self.releaseStreaming()
+        }
+    }
+
+    func observeTerminalFailure(_ observer: @escaping (Int) -> Void) {
+        queue.async {
+            guard !self.invalidated else { return }
+            self.onTerminalFailure = observer
+            if let status = self.terminalFailure { observer(status) }
         }
     }
 
@@ -232,10 +240,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     self.noteFailure("HTTP \(status) at \(start)")
                     if status == 429 || status >= 500 || status == 0,
                        self.retry(loadingRequest, from: start, end: end, attempt: attempt) { return }
-                    if [403, 404, 410].contains(status), !self.reportedHTTPError {
-                        self.reportedHTTPError = true
-                        self.onHTTPError?(status)
-                    }
+                    if [403, 404, 410].contains(status) { self.reportTerminalFailure(status) }
                     loadingRequest.finishLoading(with: NSError(
                         domain: "Laya", code: status,
                         userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]
@@ -313,9 +318,12 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             s.request.contentInformationRequest?.contentLength = length
             s.end = min(s.end, length - 1)
         }
+        if s.request.contentInformationRequest != nil, knownLength == nil, !st.complete {
+            if st.status != 0 { return fail(s, st.status) }
+            return waitFor(s, entry, need: nil)
+        }
         let refused = st.status != 0 && st.written <= s.next
         if refused { return fail(s, st.status) }
-        guard s.request.contentInformationRequest == nil || knownLength != nil || st.complete else { return waitFor(s, entry, need: 1) }
         guard let data = s.request.dataRequest else { return finish(s) } // only the type-and-length ask
         let from = s.next
         while s.next <= s.end {
@@ -333,17 +341,21 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         waitFor(s, entry, need: s.next + 1)
     }
 
-    private func waitFor(_ s: Serve, _ entry: StreamCache.Entry, need: Int64) {
+    private func waitFor(_ s: Serve, _ entry: StreamCache.Entry, need: Int64?) {
         s.token = entry.wait(for: need, on: queue) { [weak self, weak s] in if let self, let s { self.pump(s) } }
     }
 
     private func fail(_ s: Serve, _ status: Int) {
-        noteFailure("stream HTTP \(status) at \(s.next)")
-        if [403, 404, 410].contains(status), !reportedHTTPError {
-            reportedHTTPError = true
-            onHTTPError?(status)
-        }
-        finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]))
+        let reason = status > 0 ? "HTTP \(status)" : "transport code \(status)"
+        noteFailure("stream \(reason) at \(s.next)")
+        reportTerminalFailure(status)
+        finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: reason]))
+    }
+
+    private func reportTerminalFailure(_ status: Int) {
+        guard terminalFailure == nil else { return }
+        terminalFailure = status
+        onTerminalFailure?(status)
     }
 
     private func releaseStreaming() {
