@@ -104,6 +104,7 @@ fun MainViewController(
         runCatching { DashAudio.parse(manifest, requireFlac = true) }.getOrNull()?.let { plan ->
             val playlist = DashAudio.playlist(plan) { "segment-$it.m4s" }
             registerTidalHls(playlist, listOf(plan.initialization) + plan.media, emptyMap())
+                ?.also { IosDownloads.rememberDash(it, plan) }
         }
     }
     IosLongStream.register = registerTidalHls

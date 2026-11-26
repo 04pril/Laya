@@ -12,7 +12,8 @@ import com.music.laya.data.model.Song
 import com.music.laya.data.model.UiState
 import com.music.laya.data.settings.AppSettings
 import com.music.laya.data.settings.DownloadQuality
-import com.music.laya.data.sources.SourceKind
+import com.music.laya.data.sources.lossless.DashAudio
+import com.music.laya.platform.ConcurrentMap
 import com.music.laya.data.sources.SourceResolver
 import com.music.laya.data.sources.SourceStream
 import com.music.laya.data.sources.TrackMatcher
@@ -96,6 +97,17 @@ internal object IosDownloads {
     private val fs = FileSystem.SYSTEM
     private val json = Json { ignoreUnknownKeys = true }
     private val client by lazy { ktorClient { } }
+
+    /**
+     * Tidal's FLAC on iOS is a DASH manifest the player reads as a loopback HLS playlist; the stream a download is
+     * handed is that playlist's URL. Its segments, by that URL, so a download fetches them from Tidal directly.
+     */
+    private val dashPlans = ConcurrentMap<String, DashAudio.Plan>()
+
+    fun rememberDash(playlistUrl: String, plan: DashAudio.Plan) {
+        if (dashPlans.size >= 64) dashPlans.clear()
+        dashPlans[playlistUrl] = plan
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val gate = Mutex() // one transfer at a time, the rest read "Queued"
     private val jobs = mutableMapOf<String, Job>()
@@ -258,6 +270,10 @@ internal object IosDownloads {
     private suspend fun routeFor(song: Song, quality: DownloadQuality): Route {
         fromSources(song, quality)?.let { (stream, ext) ->
             val format = stream.format
+            dashPlans[stream.url]?.let { plan ->
+                // init + fragments is one fragmented MP4, which AVPlayer opens like any m4a (the same FLAC it streams).
+                return Route("m4a", "FLAC") { sink, progress -> fetchDash(plan, sink, progress) }
+            }
             return Route(
                 ext, if (format.isDolbyAtmos) "DOLBY" else if (ext == "flac") "FLAC" else null,
             ) { sink, progress -> fetchDirect(stream.url, stream.headers, sink, progress) }
@@ -272,9 +288,9 @@ internal object IosDownloads {
     private suspend fun fromSources(song: Song, quality: DownloadQuality): Pair<SourceStream, String>? {
         val stream = withTimeoutOrNull(SOURCE_LOOKUP_MS) {
             try {
-                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality)) {
-                    it != SourceKind.TIDAL
-                }
+                // Tidal included: its FLAC arrives as DASH, saved by fetchDash. Left out, a Qobuz rate limit sent
+                // a "Lossless" download to YouTube's AAC with Tidal holding the FLAC.
+                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -282,6 +298,7 @@ internal object IosDownloads {
                 null
             }
         } ?: return null
+        if (stream.url in dashPlans) return stream to "m4a"
         val path = stream.url.substringBefore('?').lowercase()
         if (path.endsWith(".m3u8") || path.endsWith(".mpd")) return null
         val ext = when (stream.format.codec?.lowercase()?.trim()) {
@@ -356,6 +373,30 @@ internal object IosDownloads {
                 if (written == 0L || ++attempt > RESUMES) throw e
                 TrackLog.w("Laya", "download dropped at ${written}B (${e.message}); resuming")
             }
+        }
+    }
+
+    /** A DASH rendition's initialization segment, then each media segment in order, into one file. */
+    private suspend fun fetchDash(plan: DashAudio.Plan, sink: BufferedSink, progress: (Long, Long) -> Unit) {
+        val parts = listOf(plan.initialization) + plan.media
+        parts.forEachIndexed { at, url ->
+            var attempt = 0
+            while (true) {
+                try {
+                    val r = client.get(url)
+                    if (r.status.value !in 200..299) error("Download failed (HTTP ${r.status.value})")
+                    val bytes = r.bodyAsBytes()
+                    if (bytes.isEmpty()) error("Empty segment $at")
+                    sink.write(bytes)
+                    break
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (++attempt > RESUMES) throw e
+                    TrackLog.w("Laya", "download segment $at failed (${e.message}); retrying")
+                }
+            }
+            progress(at + 1L, parts.size.toLong())
         }
     }
 
