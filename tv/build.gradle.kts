@@ -83,6 +83,7 @@ val betaSuffix = ""
 android {
     namespace = "com.music.laya"
     // InnerTubeX's AAR requires compiling against 37; targetSdk (runtime behaviour) stays 36.
+    ndkVersion = "28.2.13676358"
     compileSdk = 37
 
     defaultConfig {

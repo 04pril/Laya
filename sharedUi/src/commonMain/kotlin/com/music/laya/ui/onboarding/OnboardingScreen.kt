@@ -115,7 +115,12 @@ fun OnboardingScreen(
 
     // The mesh never settles on one palette: each crossfade is as long as the
     // hold, so one runs straight into the next.
-    val palette = cyclingMeshPalette(if (page != PAGE_CONNECT) WelcomeMeshPalettes else ConnectPalettes)
+    val connectionSetup = page == -1
+    val palette = when (page) {
+        -1 -> WelcomeMeshPalettes.first()
+        PAGE_CONNECT -> cyclingMeshPalette(ConnectPalettes)
+        else -> cyclingMeshPalette(WelcomeMeshPalettes)
+    }
 
     Box(
         modifier
@@ -129,7 +134,8 @@ fun OnboardingScreen(
         MeshGradientBackground(
             palette = palette,
             trackKey = page,
-            continuous = true,
+            continuous = !connectionSetup,
+            animated = !connectionSetup,
             driftMillis = 6_000,
             colorFadeMillis = MESH_CYCLE_MILLIS,
         )
@@ -216,14 +222,7 @@ private fun ColumnScope.NamePage(
         enter = fadeIn() + expandVertically(),
         exit = fadeOut() + shrinkVertically(),
     ) {
-        Column {
-            Spacer(Modifier.height(56.dp))
-            Image(
-                painter = painterResource(Res.drawable.ic_logo),
-                contentDescription = null,
-                modifier = Modifier.size(width = 23.dp, height = 30.dp),
-            )
-        }
+        OnboardingBrand()
     }
     Spacer(Modifier.height(24.dp))
     OnboardingTitle(stringResource(Res.string.onboarding_title))
@@ -300,7 +299,7 @@ private fun ColumnScope.ConnectPage(
 
 /** Replay's heading, scaled up: the one line each page exists to say. */
 @Composable
-internal fun OnboardingTitle(text: String) {
+fun OnboardingTitle(text: String) {
     Text(
         text = text,
         style = MaterialTheme.typography.displayLarge.copy(
@@ -310,6 +309,18 @@ internal fun OnboardingTitle(text: String) {
         ),
         color = Color.White,
     )
+}
+
+@Composable
+fun OnboardingBrand() {
+    Column {
+        Spacer(Modifier.height(56.dp))
+        Image(
+            painter = painterResource(Res.drawable.ic_logo),
+            contentDescription = null,
+            modifier = Modifier.size(width = 23.dp, height = 30.dp),
+        )
+    }
 }
 
 /**
@@ -364,7 +375,7 @@ private fun NameField(value: String, onValueChange: (String) -> Unit, onDone: ()
  * the pair reads as a choice rather than a button and an afterthought.
  */
 @Composable
-internal fun OnboardingPillButton(
+fun OnboardingPillButton(
     label: String,
     onClick: () -> Unit,
     primary: Boolean,

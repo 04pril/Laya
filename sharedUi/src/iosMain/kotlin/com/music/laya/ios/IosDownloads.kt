@@ -12,6 +12,7 @@ import com.music.laya.data.model.Song
 import com.music.laya.data.model.UiState
 import com.music.laya.data.settings.AppSettings
 import com.music.laya.data.settings.DownloadQuality
+import com.music.laya.data.sources.SourceKind
 import com.music.laya.data.sources.SourceResolver
 import com.music.laya.data.sources.SourceStream
 import com.music.laya.data.sources.TrackMatcher
@@ -271,7 +272,9 @@ internal object IosDownloads {
     private suspend fun fromSources(song: Song, quality: DownloadQuality): Pair<SourceStream, String>? {
         val stream = withTimeoutOrNull(SOURCE_LOOKUP_MS) {
             try {
-                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality))
+                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality)) {
+                    it != SourceKind.TIDAL
+                }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

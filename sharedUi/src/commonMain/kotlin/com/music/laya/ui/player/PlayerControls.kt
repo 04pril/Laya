@@ -95,6 +95,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.ImageVector
 import org.jetbrains.compose.resources.painterResource
+import androidx.compose.ui.layout.AlignmentLine
+import androidx.compose.ui.layout.HorizontalAlignmentLine
+import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -110,6 +113,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.abs
 import com.music.laya.ui.haptics.Haptic
 import com.music.laya.ui.haptics.rememberHaptics
 import com.music.laya.ui.icons.LayaIcons
@@ -120,6 +124,8 @@ import com.music.laya.data.settings.TrackAnalysisState
 import com.music.laya.data.settings.AudioQuality
 import com.music.laya.data.model.Song
 import kotlin.math.roundToInt
+
+private val SeekTrackCenter = HorizontalAlignmentLine(::minOf)
 
 /**
  * How long the shuffle glyph ignores further taps after one lands.
@@ -224,6 +230,12 @@ internal fun PlayerScrubber(
             mixing = mixing,
             mixPulse = mixPulse,
             transitionWindow = transitionWindow,
+            modifier = Modifier.layout { measurable, constraints ->
+                val slider = measurable.measure(constraints)
+                layout(slider.width, slider.height, mapOf(SeekTrackCenter to slider.height / 2)) {
+                    slider.placeRelative(0, 0)
+                }
+            },
         )
         Box(
             modifier = Modifier
@@ -262,6 +274,40 @@ internal fun PlayerScrubber(
             if (mixingShown) {
                 MixingLabel(mixPulse, Modifier.align(Alignment.Center))
             }
+        }
+    }
+}
+
+/** Aligns the transport to the drawn tracks, including the space taken by the seek timestamps. */
+@Composable
+internal fun PortraitPlaybackControls(
+    gap: Dp,
+    scrubber: @Composable () -> Unit,
+    transport: @Composable () -> Unit,
+    volume: @Composable () -> Unit,
+) {
+    Layout(
+        modifier = Modifier.fillMaxWidth(),
+        content = {
+            Box { scrubber() }
+            Box { transport() }
+            Box { volume() }
+        },
+    ) { measurables, constraints ->
+        val rowConstraints = constraints.copy(minHeight = 0)
+        val seek = measurables[0].measure(rowConstraints)
+        val buttons = measurables[1].measure(rowConstraints)
+        val volumeRow = measurables[2].measure(rowConstraints)
+        val seekCenter = seek[SeekTrackCenter].takeUnless { it == AlignmentLine.Unspecified } ?: seek.height / 2
+        val seekInset = seek.height - seekCenter
+        val volumeInset = volumeRow.height / 2
+        val totalGap = gap.roundToPx().coerceAtLeast(abs(seekInset - volumeInset))
+        val above = (totalGap + volumeInset - seekInset) / 2
+        val rowsHeight = seek.height + buttons.height + volumeRow.height + totalGap
+        layout(constraints.maxWidth, rowsHeight.coerceIn(constraints.minHeight, constraints.maxHeight)) {
+            seek.placeRelative(0, 0)
+            buttons.placeRelative(0, seek.height + above)
+            volumeRow.placeRelative(0, seek.height + buttons.height + totalGap)
         }
     }
 }
@@ -450,12 +496,19 @@ internal fun TransportRow(
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     compact: Boolean = false,
+    portraitPhone: Boolean = false,
 ) {
-    val playSize = if (compact) 58.dp else 74.dp
-    val playTouch = if (compact) 76.dp else 92.dp
-    val skipSize = if (compact) 44.dp else PLAYER_SKIP_ICON_SIZE
+    val playSize = when {
+        compact -> 58.dp
+        portraitPhone -> 66.dp
+        else -> 74.dp
+    }
+    val playTouch = if (compact) 76.dp else PLAYER_PLAY_TOUCH_SIZE
+    val skipSize = if (compact || portraitPhone) 44.dp else PLAYER_SKIP_ICON_SIZE
     Row(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier.fillMaxWidth().then(
+            if (portraitPhone) Modifier.padding(horizontal = PORTRAIT_TRANSPORT_INSET) else Modifier,
+        ),
         // SpaceAround, not SpaceEvenly: the outer margins take half a gap, so
         // the three buttons spread a little further apart from each other.
         horizontalArrangement = Arrangement.SpaceAround,
@@ -478,7 +531,7 @@ internal fun TransportRow(
                 CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 3.dp,
-                    modifier = Modifier.size(if (compact) 30.dp else 38.dp),
+                    modifier = Modifier.size(if (compact || portraitPhone) 30.dp else 38.dp),
                 )
             }
         } else {
@@ -630,13 +683,21 @@ internal fun PlayerActionRow(
     onOpenListenTogetherMembers: () -> Unit,
     /** The audio/video switch beside Listen Together — see [OutputActions]. */
     videoToggle: VideoToggle? = null,
+    alignWithPortraitTransport: Boolean = false,
 ) {
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        // Sized for the wider of the two capsules — the three-up one — in both
-        // states. Computed for whichever was on screen it would change as they
-        // swap, and the lyrics and queue glyphs would slide with it.
-        val widestRow = BOTTOM_ACTION_SIZE * 2 + pillWidth(3)
-        val edgeInset = ((maxWidth - widestRow) / 4).coerceAtLeast(0.dp)
+        val edgeInset = if (alignWithPortraitTransport) {
+            // Match the outer centers of TransportRow's three SpaceAround children.
+            val transportInset = PORTRAIT_TRANSPORT_INSET
+            val freeSpace = (maxWidth - transportInset * 2 - PLAYER_SKIP_TOUCH_SIZE * 2 - PLAYER_PLAY_TOUCH_SIZE)
+                .coerceAtLeast(0.dp)
+            transportInset + freeSpace / 6 + (PLAYER_SKIP_TOUCH_SIZE - BOTTOM_ACTION_SIZE) / 2
+        } else {
+            ((maxWidth - BOTTOM_ACTION_SIZE * 2 - pillWidth(3)) / 4).coerceAtLeast(0.dp)
+        }
+        val rowWidth = maxWidth - edgeInset * 2
+        val queueModeWidth = (rowWidth - BOTTOM_ACTION_SIZE - 2.dp) / 3
+        val queueModeSegment = PILL_SEGMENT_WIDTH.coerceAtMost(queueModeWidth.coerceAtLeast(0.dp))
         // 0 with the capsule centred between lyrics and queue, 1 with it moved
         // over to where the lyrics glyph sits. Read only while placing, so the
         // slide relays out the row and recomposes nothing.
@@ -703,6 +764,7 @@ internal fun PlayerActionRow(
                             highlighted = shuffleEnabled,
                             haptic = if (shuffleEnabled) Haptic.ToggleOff else Haptic.ToggleOn,
                             tapWindowMs = SHUFFLE_TAP_WINDOW_MS,
+                            width = queueModeSegment,
                         )
                         PillDivider()
                         PillSegment(
@@ -724,6 +786,7 @@ internal fun PlayerActionRow(
                                 RepeatModes.ONE -> Haptic.ToggleOff
                                 else -> Haptic.Select
                             },
+                            width = queueModeSegment,
                         )
                         PillDivider()
                         PillSegment(
@@ -735,6 +798,7 @@ internal fun PlayerActionRow(
                             highlighted = autoplayEnabled,
                             haptic = if (autoplayEnabled) Haptic.ToggleOff else Haptic.ToggleOn,
                             tapWindowMs = AUTOPLAY_TAP_WINDOW_MS,
+                            width = queueModeSegment,
                         )
                     }
                 } else {
@@ -743,6 +807,10 @@ internal fun PlayerActionRow(
                         onParty = onListenTogether,
                         onOpenMembers = onOpenListenTogetherMembers,
                         videoToggle = videoToggle,
+                        centeredExtraWidth = if (alignWithPortraitTransport) {
+                            ((rowWidth - BOTTOM_ACTION_SIZE * 2 - OUTPUT_BUTTON_SIZE) / 2)
+                                .coerceIn(0.dp, BOTTOM_ACTION_SIZE)
+                        } else null,
                     )
                 }
             }
@@ -859,6 +927,8 @@ private fun TransportGlyph(
 /** The skip glyphs' width, and their touch box, beside the larger play button. */
 private val PLAYER_SKIP_ICON_SIZE = 53.dp
 private val PLAYER_SKIP_TOUCH_SIZE = 53.dp
+private val PLAYER_PLAY_TOUCH_SIZE = 92.dp
+private val PORTRAIT_TRANSPORT_INSET = 18.dp
 
 /**
  * The skip glyphs are drawn a little flatter than they are wide, so the pair
@@ -867,6 +937,7 @@ private val PLAYER_SKIP_TOUCH_SIZE = 53.dp
 private const val PLAYER_SKIP_HEIGHT_SCALE = 0.85f
 
 private val BOTTOM_ACTION_SIZE = 44.dp
+private val OUTPUT_BUTTON_SIZE = 48.dp
 
 /**
  * One half of the output capsule — wider than it is tall, so the capsule reads
@@ -950,6 +1021,7 @@ private fun OutputActions(
     /** Who's in it, before the settings page — see [ListenTogetherMembersSheet]. */
     onOpenMembers: () -> Unit,
     videoToggle: VideoToggle? = null,
+    centeredExtraWidth: Dp? = null,
 ) {
     val badge = rememberPartyBadge()
     val hideParty by com.music.laya.data.settings.IosCustomization.hideParty.collectAsStateWithLifecycle()
@@ -957,11 +1029,36 @@ private fun OutputActions(
     if (PlayerPlatform.host.hasNativeOutputGlyph) {
         val haptics = rememberHaptics()
         val outputLabel = stringResource(Res.string.audio_output)
+        val partyButton: (@Composable () -> Unit)? = if (hideParty) null else {
+            {
+                BottomGlyph(
+                    icon = Icons.Rounded.Person,
+                    contentDescription = stringResource(Res.string.listen_together_open),
+                    onClick = if (badge.inParty) onOpenMembers else onParty,
+                    highlighted = badge.inParty,
+                    width = centeredExtraWidth ?: BOTTOM_ACTION_SIZE,
+                )
+            }
+        }
+        val videoButton: (@Composable () -> Unit)? = videoToggle?.takeUnless { hideVideo }?.let { toggle ->
+            {
+                BottomGlyph(
+                    icon = if (toggle.video) LayaIcons.MusicNote else Icons.Rounded.Videocam,
+                    contentDescription = stringResource(if (toggle.video) Res.string.switch_to_audio else Res.string.switch_to_video),
+                    onClick = toggle.onToggle,
+                    width = centeredExtraWidth ?: BOTTOM_ACTION_SIZE,
+                )
+            }
+        }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (centeredExtraWidth != null) {
+                if (partyButton != null && videoButton != null) partyButton()
+                else if (partyButton != null || videoButton != null) Spacer(Modifier.width(centeredExtraWidth))
+            }
             // One background-free route glyph. Open our output drawer first;
             // its Bluetooth/AirPlay row owns the native route-picker overlay.
             Box(
-                Modifier.size(48.dp)
+                Modifier.size(OUTPUT_BUTTON_SIZE)
                     .semantics { contentDescription = outputLabel }
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -972,8 +1069,8 @@ private fun OutputActions(
             ) {
                 PlayerPlatform.host.OutputGlyph(Modifier.size(26.dp))
             }
-            if (!hideParty) BottomGlyph(icon = Icons.Rounded.Person, contentDescription = stringResource(Res.string.listen_together_open), onClick = if (badge.inParty) onOpenMembers else onParty, highlighted = badge.inParty)
-            if (!hideVideo && videoToggle != null) BottomGlyph(icon = if (videoToggle.video) LayaIcons.MusicNote else Icons.Rounded.Videocam, contentDescription = stringResource(if (videoToggle.video) Res.string.switch_to_audio else Res.string.switch_to_video), onClick = videoToggle.onToggle)
+            if (centeredExtraWidth == null || videoButton == null) partyButton?.invoke()
+            videoButton?.invoke()
         }
         return
     }
@@ -1280,6 +1377,7 @@ private fun BottomGlyph(
      * ask for a window.
      */
     tapWindowMs: Long = 0L,
+    width: Dp = BOTTOM_ACTION_SIZE,
 ) {
     val haptics = rememberHaptics()
     // Read only from the click handler, never during composition, so writing it
@@ -1288,7 +1386,7 @@ private fun BottomGlyph(
     val lastTap = remember { mutableLongStateOf(-tapWindowMs) }
     Box(
         modifier = Modifier
-            .size(BOTTOM_ACTION_SIZE)
+            .size(width = width, height = BOTTOM_ACTION_SIZE)
             .clip(CircleShape)
             .background(
                 if (highlighted) LocalPlayerTint.current.copy(alpha = 0.20f) else Color.Transparent,

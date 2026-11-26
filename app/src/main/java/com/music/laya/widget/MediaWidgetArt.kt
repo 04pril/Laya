@@ -297,7 +297,7 @@ internal object MediaWidgetArt {
 
     // ---- artwork ----
 
-    private suspend fun loadArtwork(context: Context, url: String?, longestSidePx: Int): Bitmap? {
+    internal suspend fun loadArtwork(context: Context, url: String?, longestSidePx: Int): Bitmap? {
         if (url.isNullOrBlank()) return null
         val px = artPxFor(longestSidePx)
         // Second choice, and only when the first misses: the size the media
@@ -538,7 +538,7 @@ internal object MediaWidgetArt {
      * the three colour channels are carried through and alpha is written back
      * solid.
      */
-    private fun blurInPlace(pixels: IntArray, scratch: IntArray, w: Int, h: Int, radius: Int) {
+    internal fun blurInPlace(pixels: IntArray, scratch: IntArray, w: Int, h: Int, radius: Int) {
         val r = radius.coerceAtMost(maxOf(1, minOf(w, h) - 1))
         repeat(BLUR_PASSES) {
             boxPass(pixels, scratch, lines = h, lineStride = w, span = w, step = 1, radius = r)

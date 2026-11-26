@@ -68,4 +68,19 @@ class IosCustomizationTest {
         assertTrue(IosCustomization.customFontSizeKeys.value.isEmpty())
     }
 
+    @Test fun androidKeysPersistIndependentlyAndKeepIosMigrationCompatible() {
+        val store = MapSettings()
+        store.putBoolean("ios_hide_video", false)
+        IosCustomization.install(store, "ko", keyPrefix = "android_")
+        assertTrue(IosCustomization.hideVideo.value)
+        IosCustomization.set("hide_party", IosCustomization.hideParty, false)
+        IosCustomization.set("korean_size", IosCustomization.koreanSize, 41)
+        IosCustomization.install(store, "en", defaultFontSize = 48, keyPrefix = "android_")
+        assertFalse(IosCustomization.hideParty.value)
+        assertEquals(41, IosCustomization.koreanSize.value)
+        IosCustomization.install(store, "en")
+        assertFalse(IosCustomization.hideVideo.value)
+        assertEquals(34, IosCustomization.koreanSize.value)
+    }
+
 }

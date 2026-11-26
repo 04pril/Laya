@@ -1,6 +1,8 @@
 package com.music.laya.download
 
+import com.music.laya.data.sources.lossless.DashAudio
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Which rendition of a multi-rendition manifest a download keeps. */
@@ -35,5 +37,23 @@ class OfflineDashTest {
     fun `without a lossless rendition takes the highest bandwidth`() {
         val plan = OfflineDash.parse(tidal.replace(Regex("""<Representation id="FLAC.*?</Representation>""", RegexOption.DOT_MATCHES_ALL), ""))
         assertEquals("https://cdn/AACLC/0.mp4?a=1&b=2", plan.initialization)
+    }
+
+    @Test
+    fun `the streaming bridge keeps FLAC and refuses lossy only manifests`() {
+        val plan = DashAudio.parse(tidal, requireFlac = true)
+        val playlist = DashAudio.playlist(plan) { "segment-$it.m4s" }
+        assertEquals("https://cdn/FLAC,44100,16/4.mp4?a=1&b=2", plan.media.last())
+        assertTrue("#EXT-X-MAP:URI=\"segment-0.m4s\"" in playlist.lines())
+        assertTrue("segment-4.m4s" in playlist.lines())
+
+        val noFlac = tidal.replace("codecs=\"flac\"", "codecs=\"mp4a.40.2\"")
+        assertTrue(runCatching { DashAudio.parse(noFlac, requireFlac = true) }.isFailure)
+
+        val noFlacTemplate = tidal.replace(
+            Regex("""(<Representation id="FLAC.*?)<SegmentTemplate.*?</SegmentTemplate>""", RegexOption.DOT_MATCHES_ALL),
+            "$1",
+        )
+        assertTrue(runCatching { DashAudio.parse(noFlacTemplate, requireFlac = true) }.isFailure)
     }
 }

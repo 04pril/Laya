@@ -87,6 +87,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.SideEffect
+import com.music.laya.proxy.ProxyWelcome
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
@@ -263,6 +265,8 @@ import com.music.laya.ui.components.TopBarAccountButton
 import com.music.laya.ui.screens.SegmentedControl
 import com.music.laya.ui.components.SearchField
 import com.music.laya.sharedui.resources.Res as SharedRes
+import com.music.laya.sharedui.resources.home_sections
+import com.music.laya.sharedui.resources.player_preferences
 import com.music.laya.sharedui.resources.search_hint
 import com.music.laya.sharedui.resources.search_addons_hint
 import com.music.laya.sharedui.resources.search_library_hint
@@ -510,6 +514,14 @@ private fun LayaApp(
     viewModel: MainViewModel = viewModel(),
 ) {
     val context = LocalContext.current
+    val carConnected by com.music.laya.playback.CarConnectionState.connected.collectAsStateWithLifecycle()
+    val keepCarScreenOn by com.music.laya.data.settings.IosCustomization.keepCarScreenOn.collectAsStateWithLifecycle()
+    val keepAwakeView = androidx.compose.ui.platform.LocalView.current
+    DisposableEffect(carConnected, keepCarScreenOn, keepAwakeView) {
+        val previous = keepAwakeView.keepScreenOn
+        if (carConnected && keepCarScreenOn) keepAwakeView.keepScreenOn = true
+        onDispose { keepAwakeView.keepScreenOn = previous }
+    }
     val clipboard = LocalClipboard.current
     val hazeState = remember { HazeState() }
     // Recording the backdrop layer costs a draw pass, so it only runs when a
@@ -821,6 +833,7 @@ private fun LayaApp(
     val googleAccounts by viewModel.googleAccounts.collectAsStateWithLifecycle()
     val activeAccountId by viewModel.activeAccountId.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val homePlaylistProfile = activeAccountId?.takeIf { signedIn }?.let { "$it:${activeProfileId.orEmpty()}" }
     val historyState by viewModel.history.collectAsStateWithLifecycle()
     val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
     val lyricsSource by viewModel.lyricsSource.collectAsStateWithLifecycle()
@@ -972,6 +985,38 @@ private fun LayaApp(
     // and handed to every surface, so the player, the mini player and the glass
     // bar can never disagree about whether this device may drive the music.
     val controlsLocked = partyState.controlsLocked
+    DisposableEffect(Unit) {
+        onDispose {
+            com.music.laya.ui.player.AndroidQueueActions.remove = {}
+            com.music.laya.ui.player.AndroidQueueActions.undo = {}
+            com.music.laya.ui.player.AndroidQueueActions.canUndo = false
+        }
+    }
+    var queueRemoval by remember { mutableStateOf<com.music.laya.playback.QueueBatchRemoval?>(null) }
+    SideEffect {
+        val actions = com.music.laya.ui.player.AndroidQueueActions
+        actions.canUndo = queueRemoval?.canUndo(player.queue, player.queueIndex) == true
+        actions.remove = { ids ->
+            if (!controlsLocked) controller?.let { c ->
+                val live = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }
+                com.music.laya.playback.QueueBatchRemoval.create(live, c.currentMediaItemIndex, ids)?.let { change ->
+                    (live.lastIndex downTo c.currentMediaItemIndex + 1).filter { live[it].queueEntryId in ids }.forEach { c.removeMediaItem(it) }
+                    queueRemoval = change
+                }
+            }
+        }
+        actions.undo = {
+            if (!controlsLocked) controller?.let { c ->
+                val live = (0 until c.mediaItemCount).map { c.getMediaItemAt(it).toSong() }
+                queueRemoval?.takeIf { it.canUndo(live, c.currentMediaItemIndex) }?.let { change ->
+                    change.before.forEachIndexed { i, song ->
+                        if (song.queueEntryId !in change.after.map { it.queueEntryId }) c.addMediaItem(i, song.toMediaItem())
+                    }
+                }
+                queueRemoval = null
+            }
+        }
+    }
     var queueNotice by remember { mutableStateOf<QueueActionNotice?>(null) }
     var queueNoticeId by remember { mutableIntStateOf(0) }
     val showQueueNotice: (String) -> Unit = { message ->
@@ -1527,7 +1572,9 @@ private fun LayaApp(
                     c.playSongs(result.timeline, result.startIndex)
                 }
             }
-            // Start playback in the mini-player; the user opens the full view by tapping it.
+            if (com.music.laya.data.settings.IosCustomization.openPlayer.value) {
+                if (reducePlayerMotion) showNowPlaying = true else playerSheetMotion.open()
+            }
         }
     }
     // Kept for entry points whose rows already carry their origin (notably a
@@ -1652,7 +1699,9 @@ private fun LayaApp(
                 source = source,
             )
             c.playSongs(oneOffQueue, 0)
-            // Start radio in the mini-player; the user opens the full view by tapping it.
+            if (com.music.laya.data.settings.IosCustomization.openPlayer.value) {
+                if (reducePlayerMotion) showNowPlaying = true else playerSheetMotion.open()
+            }
         }
     }
 
@@ -2996,7 +3045,15 @@ private fun LayaApp(
                                     .takeIf { com.music.laya.recognition.canOfferTile },
                                 onAddShortcut = { com.music.laya.recognition.offerTile(context) },
                             )
-                        } else if (pageRoute == AppRoute.Settings) {
+                        } else if (pageRoute == AppRoute.PlayerPreferences) {
+                            com.music.laya.ui.AndroidCustomizationSettings(contentPadding = listPadding)
+                        } else if (pageRoute == AppRoute.HomeLayout) {
+                            com.music.laya.ui.screens.HomeLayoutScreen(
+                                feed = (homeState as? UiState.Success)?.data.orEmpty(),
+                                profile = homePlaylistProfile,
+                                contentPadding = listPadding,
+                            )
+                        } else if (pageRoute == AppRoute.Settings || pageRoute is AppRoute.SettingsSection) {
                             SettingsScreen(
                                 windowWidth = windowWidth,
                                 signedIn = signedIn,
@@ -3021,6 +3078,11 @@ private fun LayaApp(
                                 onSpotifyCanvasAuth = { showSpotifyCanvasAuth = true },
                                 onAppLanguage = { showAppLanguage = true },
                                 onEditSignatureApi = { editingSignatureApi = true },
+                                onPlayerPreferences = { navigator.push(AppRoute.PlayerPreferences) },
+                                onHomeLayout = { navigator.push(AppRoute.HomeLayout) },
+                                onProxySettings = { context.startActivity(Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java)) },
+                                category = (pageRoute as? AppRoute.SettingsSection)?.category,
+                                onOpenCategory = { navigator.push(AppRoute.SettingsSection(it)) },
                                 contentPadding = listPadding,
                             )
                         } else if (page != null) {
@@ -3244,11 +3306,15 @@ private fun LayaApp(
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
                             TAB_HOME -> HomeScreen(
                                 state = homeState,
+                                customizeSections = true,
+                                playlistProfile = homePlaylistProfile,
                                 listState = homeListState,
                                 currentSong = player.song,
                                 isPlaying = player.isPlaying,
                                 title = stringResource(R.string.listen_now),
                                 signedIn = signedIn,
+                                onProxy = { context.startActivity(Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java)) },
+                                proxyLabel = if (context.resources.configuration.locales[0].language == "ko") "프록시 설정" else "Proxy settings",
                                 onSignIn = { webSession = WebSessionMode.SIGN_IN },
                                 onItemClick = { item, shelfTitle ->
                                     val song = shelfSong(item)
@@ -3600,6 +3666,9 @@ private fun LayaApp(
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.Settings -> stringResource(R.string.settings)
+                        is AppRoute.SettingsSection -> org.jetbrains.compose.resources.stringResource(route.category.title)
+                        AppRoute.HomeLayout -> org.jetbrains.compose.resources.stringResource(SharedRes.string.home_sections)
+                        AppRoute.PlayerPreferences -> org.jetbrains.compose.resources.stringResource(SharedRes.string.player_preferences)
                         AppRoute.Replay -> stringResource(R.string.replay)
                         null -> when {
                             detail != null && detailActiveShelf != null -> detailActiveShelf?.title.orEmpty()
@@ -3997,6 +4066,7 @@ private fun LayaApp(
                         },
                         onNext = { controller?.seekToNextMediaItem() },
                         onPrevious = { controller?.seekToPrevious() },
+                        onDismissPlayer = { controller?.run { pause(); stop(); clearMediaItems() } },
                         onExpand = if (reducePlayerMotion) {
                             { showNowPlaying = true }
                         } else {
@@ -4034,6 +4104,7 @@ private fun LayaApp(
                             },
                             onNext = { controller?.seekToNextMediaItem() },
                             onPrevious = { controller?.seekToPrevious() },
+                            onDismissPlayer = { controller?.run { pause(); stop(); clearMediaItems() } },
                             onExpand = if (reducePlayerMotion) {
                                 { showNowPlaying = true }
                             } else {
@@ -4291,6 +4362,7 @@ private fun LayaApp(
             // The library toggle needs tokens only YouTube can mint, and the
             // rating it comes back with is more authoritative than anything
             // the library feed knew — so the menu asks as it opens.
+            val songMenu by viewModel.songMenu.collectAsStateWithLifecycle()
             LaunchedEffect(song.videoId) { viewModel.loadSongMenu(song.videoId) }
             // "Remove from this playlist" is only a sentence on a playlist
             // page the account can actually edit, and only for a row that
@@ -4361,6 +4433,16 @@ private fun LayaApp(
                     viewModel.loadPlaylists()
                     playlistTarget = song
                 },
+                playingRemoval = if (fromPlayer) ({
+                    val accountId by viewModel.activeAccountId.collectAsStateWithLifecycle()
+                    val profileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+                    com.music.laya.ui.components.PlayingSongRemoval(song, "$accountId:$profileId",
+                        { "${viewModel.activeAccountId.value}:${viewModel.activeProfileId.value}" },
+                        { viewModel.loadLibrary(); songActions = null })
+                }) else null,
+                onRemoveFromLibrary = if (songMenu?.inLibrary == true && songMenu?.removeFromLibraryToken != null) ({
+                    viewModel.removeSongFromLibrary(song.videoId); songActions = null
+                }) else null,
                 onRemoveFromPlaylist = editable?.let {
                     {
                         songActions = null
@@ -4866,6 +4948,9 @@ private fun LayaApp(
                 onNameChosen = ListenTogether::setNickname,
                 onSignIn = { webSession = WebSessionMode.SIGN_IN },
                 onFinish = AppSettings::setOnboardingComplete,
+                beforeName = if (com.music.laya.proxy.AppProxyStore.configured(context)) null else {
+                    { next -> ProxyWelcome(next) }
+                },
             )
         }
 

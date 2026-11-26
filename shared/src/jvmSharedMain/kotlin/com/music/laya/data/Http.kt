@@ -126,7 +126,50 @@ object Http {
         chain.proceed(request)
     }
 
-    val client: OkHttpClient = OkHttpClient.Builder()
+    /** Frozen at process startup: API, Media3 playback and downloads share the route. */
+    @Volatile private var startupRoute: AppProxyRoute = AppProxyRoute.DIRECT
+    @Volatile private var preparedClient: OkHttpClient? = null
+    @Volatile private var startupProxyAuthorization: String? = null
+
+    val configuredRoute: AppProxyRoute
+        get() = startupRoute
+
+    @Synchronized
+    fun configureAtStartup(route: AppProxyRoute, proxyAuthorization: String? = null) {
+        check(preparedClient == null) { "Proxy changes require restarting Laya" }
+        val validated = route.validated()
+        require(validated.kind != AppProxyKind.WIREGUARD_LOCAL || !proxyAuthorization.isNullOrBlank()) {
+            "An authenticated local WireGuard proxy requires a startup credential"
+        }
+        startupRoute = validated
+        startupProxyAuthorization = proxyAuthorization
+    }
+
+    val client: OkHttpClient
+        get() = preparedClient ?: synchronized(this) {
+            preparedClient ?: newClient().also { preparedClient = it }
+        }
+
+    private fun newClient(): OkHttpClient = OkHttpClient.Builder()
+        .apply {
+            if (startupRoute.kind != AppProxyKind.DIRECT) proxy(startupRoute.javaProxy())
+            if (startupRoute.kind == AppProxyKind.HTTPS) socketFactory(TlsProxySocketFactory(startupRoute.host))
+            // WireGuard's loopback listener requires per-process Basic auth.
+            // OkHttp answers *proxy* 407 challenges, never sends the credential
+            // as an Authorization header to Google/YouTube origins.
+            if (startupRoute.kind == AppProxyKind.WIREGUARD_LOCAL) {
+                proxyAuthenticator(okhttp3.Authenticator { _, response ->
+                    val secret = startupProxyAuthorization ?: return@Authenticator null
+                    if (response.request.header("Proxy-Authorization") == secret) {
+                        null
+                    } else {
+                        response.request.newBuilder()
+                            .header("Proxy-Authorization", secret)
+                            .build()
+                    }
+                })
+            }
+        }
         .connectTimeout(20, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)

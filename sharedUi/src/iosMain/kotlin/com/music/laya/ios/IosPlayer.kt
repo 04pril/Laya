@@ -6,6 +6,8 @@ import androidx.compose.runtime.setValue
 import com.music.laya.data.NerdStats
 import com.music.laya.data.TelemetryProvenance
 import com.music.laya.data.TrackLog
+import com.music.laya.data.canvas.CanvasRepository
+import com.music.laya.data.canvas.SpotifyCanvas
 import com.music.laya.data.stats.ListeningRecorder
 import com.music.laya.platform.currentTimeMillis
 import io.ktor.http.Url
@@ -68,6 +70,7 @@ import kotlinx.coroutines.selects.select
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.Dispatchers
@@ -165,6 +168,8 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     var isLoading by mutableStateOf(false); private set
     var durationMs by mutableStateOf(0L); private set
     val position = PlaybackPosition()
+    internal val playbackLog = IosPlaybackLog(engine)
+    private val nowPlayingArtworkSong = MutableStateFlow<Song?>(null)
     /** The track playing comes from a source ranked above YouTube (the player menu offers "Revert to original"). */
     var playingFromSource by mutableStateOf(false); private set
     /** A hand-asked "Upgrade quality" lookup is running (the menu row waits). */
@@ -204,6 +209,31 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     private val party = IosPartySync(scope, this)
 
     init {
+        if (engine.supportsNowPlayingCanvas()) scope.launch {
+            val settings = combine(
+                AppSettings.animatedCanvas, AppSettings.canvasOverCellular,
+                AppSettings.meteredConnection, AppSettings.prioritizeSpotifyCanvas, AppSettings.spotifySpdcToken,
+            ) { enabled, cellular, metered, preferSpotify, token ->
+                Triple(enabled && (metered != true || cellular), preferSpotify, token)
+            }
+            combine(nowPlayingArtworkSong, settings, ::Pair).collectLatest { (song, policy) ->
+                if (song == null) return@collectLatest
+                val (allowed, _, spotifyToken) = policy
+                if (!allowed) {
+                    engine.setNowPlayingCanvas(song.videoId, null)
+                    return@collectLatest
+                }
+                val canvas = CanvasRepository.cached(song) ?: CanvasRepository.canvasFor(song)
+                val remote = listOfNotNull(canvas?.url, canvas?.fallbackUrl)
+                    .firstOrNull { !it.substringBefore('?').endsWith(".m3u8", ignoreCase = true) }
+                    ?: if (canvas != null && spotifyToken.isNotBlank()) {
+                        SpotifyCanvas.search(song.title, song.artist, song.albumName)
+                            ?.takeIf { it.matches(song.title, song.artist, song.albumName) }?.url
+                    } else null
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                engine.setNowPlayingCanvas(song.videoId, remote)
+            }
+        }
         engine.setListener(this)
         IosCast.player = this
         IosMusicVideo.player = this
@@ -406,6 +436,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     fun seekTo(ms: Long) = intent { rawSeek(ms) }
 
     private fun rawSeek(ms: Long) {
+        song?.let { playbackLog.event(it.videoId, "seek requested fromMs=${position.positionMs} toMs=$ms") }
         if (pendingMs != null) { pendingMs = ms; position.seeks++; position.report(ms); return }
         if (IosCast.active) { castSeekAt = NSDate().timeIntervalSinceReferenceDate; IosCast.native?.seekTo(ms) } else
         engine.seekTo(ms)
@@ -462,6 +493,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         removal = null
         Karaoke.trackChanged(null)
         IosPlayerStore.clear()
+        nowPlayingArtworkSong.value = null
         engine.dismissNowPlaying()
     }
 
@@ -683,6 +715,11 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     /** Gives the engine [o] and records what it is, for Karaoke and the nerd stats. */
     private fun hand(song: Song, o: Opened, next: Boolean, swap: Boolean = false) {
+        playbackLog.source(song.videoId, o.sourceName, o.url, o.mime, when {
+            next -> "queued"
+            swap -> "swap requested"
+            else -> "opened"
+        })
         streams[song.videoId] = KaraokeSource(o.url, o.headers, o.mime, o.length)
         if (o.sourceName != "YouTube") offSite += song.videoId else offSite -= song.videoId
         if (!next) playingFromSource = o.sourceName != "YouTube" && o.sourceName != "Downloaded"
@@ -893,6 +930,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         index = i
         NerdStats.onTrackTransition(song.videoId)
         TrackLog.onTrackStarted(song.videoId)
+        playbackLog.start(song.videoId, fromMs, "play requested")
         pendingMs = null
         isLoading = true
         handing = true
@@ -923,7 +961,8 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         bindKaraoke()
         // Sized for the lock screen, which shows the cover up to its full width: the track's own
         // URL is a list row's thumbnail (often 60 or 120 px) and came out blurred there (#27).
-        song?.let { engine.setNowPlaying(it.title, it.artist, it.albumName, it.artworkAt(LOCK_SCREEN_ART_PX) ?: it.thumbnailUrl) }
+        song?.let { engine.setNowPlaying(it.videoId, it.title, it.artist, it.albumName, it.artworkAt(LOCK_SCREEN_ART_PX) ?: it.thumbnailUrl) }
+        nowPlayingArtworkSong.value = song
         engine.setQueueCapabilities(hasNext, hasPrevious)
     }
 
@@ -1063,6 +1102,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
             return
         }
         if (handing && isLoading) return
+        song?.let { playbackLog.progress(it.videoId, positionMs, durationMs, isPlaying, isBuffering) }
         position.report(positionMs)
         this.durationMs = durationMs
         this.isPlaying = isPlaying
@@ -1105,6 +1145,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         val (kbps, provenance) = NerdStats.sourceBitrate(id) { bitrateKbps.takeIf { it > 0 } }
             ?: bitrateKbps.takeIf { it > 0 && lossless }?.let { it to TelemetryProvenance.MEASURED }
             ?: (null to TelemetryProvenance.UNKNOWN)
+        playbackLog.event(id, "decoded source=${playbackLog.label(NerdStats.exactSourceFor(id) ?: "YouTube")} " +
+            "format=${mimeType ?: "unknown"} rateHz=$sampleRateHz channels=$channels " +
+            "bitDepth=${bitDepth.takeIf { it > 0 } ?: "unknown"} kbps=${kbps ?: "unknown"} (${provenance.name})")
         println("IosPlayer: decoder reports $mimeType ${sampleRateHz}Hz ${channels}ch ${bitDepth}-bit ${bitrateKbps}kbps; source said ${NerdStats.declaredFormat(id)?.summary ?: "nothing"}")
         NerdStats.publish(
             NerdStats.Snapshot(
@@ -1125,6 +1168,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     override fun onEnded() {
         if (IosCast.active) return
+        song?.let { playbackLog.event(it.videoId, "track ended positionMs=${position.positionMs}") }
         if (sleepAfterTrack) { cancelSleep(); isPlaying = false; PlaybackTracker.onPlaybackFinished(trackedSec); IosScrobbler.onStopped(); return }
         autoNext().let { if (it >= 0) start(it) else { isPlaying = false; PlaybackTracker.onPlaybackFinished(trackedSec); IosScrobbler.onStopped() } }
         party.onLocalIntent()
@@ -1143,6 +1187,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         val queued = queuedOpened?.takeIf { it.first == song?.videoId }?.second
         queuedOpened = null
         val now = song
+        now?.let { playbackLog.start(it.videoId, 0, "queue advanced") }
         if (now != null && queued != null) alignLyrics(now, queued) else { alignJob?.cancel(); IosLyricsAlign.offsetMs.value = 0 }
         position.report(0)
         IosPlayerStore.saveQueue(queue, index)
@@ -1158,6 +1203,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // Android's PlaybackFallback: a source that failed after being picked is not asked again, YouTube plays instead.
         if (!offSite.remove(failed.videoId)) return recover(failed, "$message ($httpStatus)", httpStatus)
         val via = NerdStats.exactSourceFor(failed.videoId) ?: "source"
+        playbackLog.event(failed.videoId, "source fallback from=${playbackLog.label(via)} to=YouTube httpStatus=$httpStatus")
         TrackLog.w("Laya", "$via failed to play: $message ($httpStatus), falling back to YouTube", about = failed.videoId)
         NerdStats.clearDeclared(failed.videoId)
         val at = position.positionMs
@@ -1190,6 +1236,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (recoverFor != failed.videoId || now - recoverAt > 60) { recoverFor = failed.videoId; recoverCount = 0 }
         recoverAt = now
         val at = pendingMs ?: position.positionMs
+        playbackLog.event(failed.videoId, "playback recovery positionMs=$at httpStatus=$httpStatus priorRetries=$recoverCount")
         // A break in the last seconds is the end of the track (the engine says so too): retrying there replays the tail.
         if (durationMs > 0 && at >= durationMs - 3_000) { TrackLog.d("Laya", "broke at the end ($reason); moving on", about = failed.videoId); return onEnded() }
         if (++recoverCount > MAX_RECOVERIES) {
@@ -1224,7 +1271,14 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     // a party hears them. Straight to the engine, a pause was undone by the next reconcile within a second.
     override fun onRemotePlayPause(play: Boolean) = setPlaying(play)
     override fun onRemoteSeek(positionMs: Long) = seekTo(positionMs)
-    override fun onSystemPause() = party.onSystemPause()
+    override fun onSystemPause() {
+        song?.let { playbackLog.event(it.videoId, "system pause positionMs=${position.positionMs}") }
+        party.onSystemPause()
+    }
+
+    override fun onPlaybackDiagnostic(message: String) {
+        song?.let { playbackLog.event(it.videoId, message) }
+    }
     override fun onRemoteNext() = next()
     override fun onRemotePrevious() = previous()
     override fun onRemoteLike() { onRemoteLike?.invoke() }

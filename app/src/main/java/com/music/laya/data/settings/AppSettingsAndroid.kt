@@ -58,7 +58,13 @@ private class AndroidAppSettingsHost(
  */
 fun AppSettings.init(context: Context, authStore: AuthStore) {
     val prefs = context.getSharedPreferences("laya_settings", Context.MODE_PRIVATE)
-    init(SharedPreferencesSettings(prefs), AndroidAppSettingsHost(prefs, authStore))
+    val settings = SharedPreferencesSettings(prefs)
+    init(settings, AndroidAppSettingsHost(prefs, authStore))
+    val language = androidx.appcompat.app.AppCompatDelegate.getApplicationLocales().get(0)?.language
+        ?: java.util.Locale.getDefault().language
+    IosCustomization.install(settings, if (language == "ko") "ko" else "en",
+        defaultFontSize = if (context.resources.configuration.smallestScreenWidthDp >= 600) 48 else 34,
+        keyPrefix = "android_")
     com.music.laya.data.spotify.LocalPlaylistStore.init(context)
     watchConnection(context)
 }

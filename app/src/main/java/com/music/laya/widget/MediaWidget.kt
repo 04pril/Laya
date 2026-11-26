@@ -129,6 +129,7 @@ abstract class MediaWidget : AppWidgetProvider() {
          */
         fun refresh(context: Context) {
             val app = context.applicationContext
+            ColorMediaWidget.refresh(app)
             MediaWidgetPill.refresh(app)
             MediaWidgetLibrary.refresh(app)
             scope.launch {

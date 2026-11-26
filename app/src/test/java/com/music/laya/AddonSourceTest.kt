@@ -236,6 +236,16 @@ class AddonSourceTest {
     }
 
     @Test
+    fun `sends a Korean search title to the addon as a URL query`() = runBlocking {
+        route("/manifest.json", manifest())
+        route("/search", json("""{"tracks":[{"id":"night","title":"밤소풍","artist":"스텔라장"}]}"""))
+
+        val query = "밤소풍 스텔라장"
+        assertEquals("밤소풍", source().search(query, limit = 10).single().title)
+        assertEquals(query, requestFor("/search").queryParameter("q"))
+    }
+
+    @Test
     fun `search honours the caller's limit`() = runBlocking {
         route("/manifest.json", manifest())
         val rows = (1..20).joinToString(",") { """{"id":"t$it","title":"Song $it","artist":"A"}""" }

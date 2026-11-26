@@ -148,6 +148,8 @@ fun SongActionsSheet(
     onOpenArtist: (String) -> Unit,
     modifier: Modifier = Modifier,
     onRemoveFromPlaylist: (() -> Unit)? = null,
+    onRemoveFromLibrary: (() -> Unit)? = null,
+    playingRemoval: (@Composable () -> Unit)? = null,
     /**
      * Takes this track out of the song cache. Null hides the row — the caller
      * passes one only while the cache actually holds some of it.
@@ -296,6 +298,10 @@ fun SongActionsSheet(
                 accent = palette.accent,
                 onClick = onAddToPlaylist,
             )
+            playingRemoval?.invoke()
+            onRemoveFromLibrary?.let {
+                ActionRow(icon = Icons.Rounded.DeleteSweep, label = stringResource(R.string.remove_from_library), accent = palette.accent, onClick = it)
+            }
             onRemoveFromPlaylist?.let {
                 ActionRow(
                     icon = Icons.Rounded.PlaylistRemove,

@@ -463,8 +463,8 @@ object SourceResolver {
      *   stream already playing — which [worthSwapping] would reject anyway,
      *   but not before spending a search and a stream call on it. See the
      *   'isn't worth swapping ... off' log line this was written to stop.
-     * @param byHand an upgrade the listener asked for: matched as loosely as
-     *   the first play was (no two-second runtime, no shared artist), and any copy better than
+     * @param byHand an upgrade the listener asked for: uses the first play's
+     *   matching rules without the two-second runtime limit, and any copy better than
      *   what is playing is taken — the listener asked for it, so the
      *   seam-avoiding margin of [worthSwapping] doesn't apply.
      */
@@ -512,11 +512,7 @@ object SourceResolver {
             request,
             waitForAll = true,
             strictLength = !byHand,
-            // By hand, the first play's rules exactly: it never required a
-            // shared artist, and a catalogue crediting the composer where
-            // YouTube credits the singer ('Aaloshyo': Anupam Roy vs Surangana
-            // Bandyopadhyay) made every copy that first play had accepted
-            // fail here, so the upgrade found nothing, ever.
+            // A manual upgrade uses the same artist requirements as first play.
             requireSharedArtist = !byHand,
         ) { candidate, stream ->
             val better = if (byHand) {
@@ -633,6 +629,7 @@ object SourceResolver {
     suspend fun forDownload(
         target: TrackMatcher.Target,
         request: StreamRequest = requestForDownload(),
+        acceptSource: (SourceKind) -> Boolean = { true },
     ): SourceStream? = coroutineScope {
         if (target.title.isBlank()) return@coroutineScope null
         val wantsLossless = when (request) {
@@ -652,7 +649,7 @@ object SourceResolver {
         // has no business deciding that a file saved over Wi-Fi later is a
         // YouTube one. Minus any addon whose manifest says `allowDownloads: 0`:
         // that one plays, but the file comes from whoever is next in line.
-        val active = SourceRegistry.activeForDownload()
+        val active = SourceRegistry.activeForDownload().filter { acceptSource(it.kind) }
         // YouTube can be switched off, and a download still goes to it when
         // nothing here answers — the download path never consults this list. So
         // an absent YouTube means everything enabled outranks it, which is
@@ -1036,6 +1033,10 @@ object SourceResolver {
         strictLength: Boolean = false,
         requireSharedArtist: Boolean = false,
     ): SourceStream? {
+        // Covers can share both title and runtime. A lossless catalogue has to
+        // corroborate a known credit before its audio can replace the selected song.
+        val needsArtistMatch = requireSharedArtist ||
+            (source.kind.canServeLossless && TrackMatcher.artistNames(target.artist).isNotEmpty())
         for (query in TrackMatcher.queries(target)) {
             val candidates = attempt(source) {
                 source.search(
@@ -1049,7 +1050,7 @@ object SourceResolver {
                 )
             } ?: return null
             var matches = TrackMatcher.ranked(candidates, target)
-            if (requireSharedArtist) {
+            if (needsArtistMatch) {
                 matches = matches.filter { TrackMatcher.sharesArtist(target.artist, it.artist) }
             }
             // JioSaavn can return different audio under the same title and

@@ -2,6 +2,7 @@ package com.music.laya.ui.screens
 
 import com.music.laya.data.sources.LosslessSource
 import com.music.laya.data.sources.lossless.LosslessProvider
+import com.music.laya.data.sources.lossless.VerificationLoss
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -71,8 +72,8 @@ fun SourcesPage(
 ) {
     val tidalVerified by LosslessProvider.Tidal.session.verified.collectAsStateWithLifecycle()
     val qobuzVerified by LosslessProvider.Qobuz.session.verified.collectAsStateWithLifecycle()
-    val tidalExpired by LosslessProvider.Tidal.session.expired.collectAsStateWithLifecycle()
-    val qobuzExpired by LosslessProvider.Qobuz.session.expired.collectAsStateWithLifecycle()
+    val tidalLoss by LosslessProvider.Tidal.session.verificationLoss.collectAsStateWithLifecycle()
+    val qobuzLoss by LosslessProvider.Qobuz.session.verificationLoss.collectAsStateWithLifecycle()
     val tidalUntil by LosslessProvider.Tidal.session.expiresAtMs.collectAsStateWithLifecycle()
     val qobuzUntil by LosslessProvider.Qobuz.session.expiresAtMs.collectAsStateWithLifecycle()
     val configs by SourceRegistry.configs.collectAsStateWithLifecycle()
@@ -147,14 +148,17 @@ fun SourcesPage(
                         config.statusLine(
                             if (config.kind.isLossless) {
                                 val qobuz = config.kind == SourceKind.QOBUZ
+                                val loss = if (qobuz) qobuzLoss else tidalLoss
                                 when {
                                     config.enabled && (if (qobuz) qobuzVerified else tidalVerified) -> SourceHealth.Ok(
                                         (if (qobuz) qobuzUntil else tidalUntil)
                                             ?.let { stringResource(Res.string.lossless_verified_until, com.music.laya.platform.localDateTime(it)) }
                                             ?: stringResource(Res.string.lossless_verified),
                                     )
-                                    (if (qobuz) qobuzExpired else tidalExpired) ->
-                                        SourceHealth.Rejected(stringResource(Res.string.lossless_verify_expired))
+                                    loss != null -> SourceHealth.Rejected(
+                                        stringResource(if (loss == VerificationLoss.Rejected)
+                                            Res.string.lossless_verify_rejected else Res.string.lossless_verify_expired),
+                                    )
                                     else -> SourceHealth.Rejected(stringResource(Res.string.lossless_verify_on_enable))
                                 }
                             } else {

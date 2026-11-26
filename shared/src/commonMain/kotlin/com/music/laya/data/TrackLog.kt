@@ -132,7 +132,7 @@ object TrackLog {
      */
     fun about(id: String?): CoroutineContext = aboutContext(id)
 
-    private class Line(val at: Long, val level: Char, val text: String, val track: String?)
+    private class Line(val at: Long, val level: Char, val text: String, val track: String?, val diagnostic: Boolean)
 
     private val lines = ArrayDeque<Line>()
 
@@ -147,14 +147,21 @@ object TrackLog {
      * limit that counts them the same either wastes memory or throws away the
      * history that matters.
      */
-    private fun record(level: Char, message: String, about: String?) {
+    /** An event whose fields were selected for sharing. Never pass URLs, raw errors or headers here. */
+    fun playbackDiagnostic(trackId: String, message: String) = record('I', message, trackId, diagnostic = true)
+
+    fun playbackTimeline(trackId: String): List<String> = synchronized(lock) {
+        lines.filter { it.diagnostic && it.track == trackId }.map { "${clock(it.at)} ${it.text}" }
+    }
+
+    private fun record(level: Char, message: String, about: String?, diagnostic: Boolean = false) {
         val text = if (message.length > MAX_LINE_CHARS) {
             message.take(MAX_LINE_CHARS) + "…(${message.length - MAX_LINE_CHARS} more)"
         } else {
             message
         }
         synchronized(lock) {
-            lines.addLast(Line(currentTimeMillis(), level, text, about))
+            lines.addLast(Line(currentTimeMillis(), level, text, about, diagnostic))
             held += text.length
             while (held > MAX_HELD_CHARS && lines.isNotEmpty()) {
                 held -= lines.removeFirst().text.length

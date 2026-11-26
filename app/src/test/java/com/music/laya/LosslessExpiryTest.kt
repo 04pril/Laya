@@ -8,6 +8,7 @@ import com.music.laya.data.sources.SourceKind
 import com.music.laya.data.sources.SourceRegistry
 import com.music.laya.data.sources.lossless.LosslessProvider
 import com.music.laya.data.sources.lossless.LosslessStore
+import com.music.laya.data.sources.lossless.VerificationLoss
 import com.music.laya.data.sources.lossless.VerificationRequired
 import com.music.laya.data.sources.lossless.ZarzSession
 import kotlinx.coroutines.CoroutineStart
@@ -90,6 +91,7 @@ class LosslessExpiryTest {
         assertEquals(1, losses.size)
         assertFalse(session.verified.value)
         assertTrue(session.expired.value)
+        assertEquals(VerificationLoss.Expired, session.verificationLoss.value)
         assertTrue("stored secret cleared", store["zarz_session_launch-test"]!!.contains("\"session_id\":\"\""))
         watcher.cancel()
     }

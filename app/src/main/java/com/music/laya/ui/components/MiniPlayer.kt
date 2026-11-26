@@ -147,6 +147,7 @@ private val VIDEO_ART_WIDTH = 71.dp
 @OptIn(ExperimentalHazeMaterialsApi::class)
 @Composable
 fun MiniPlayer(
+    onDismissPlayer: (() -> Unit)? = null,
     song: Song,
     isPlaying: Boolean,
     isLoading: Boolean,
@@ -185,6 +186,7 @@ fun MiniPlayer(
                     haptics.play(Haptic.SkipPrevious)
                     onPrevious()
                 },
+                onDismiss = onDismissPlayer,
                 locked = controlsLocked,
                 onBlocked = onBlockedControl,
             )

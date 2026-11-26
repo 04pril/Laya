@@ -72,6 +72,7 @@ android {
     lint { checkReleaseBuilds = false }
     namespace = "com.music.laya"
     // InnerTubeX's AAR requires compiling against 37; targetSdk (runtime behaviour) stays 36.
+    ndkVersion = "28.2.13676358"
     compileSdk = 37
     defaultConfig {
         applicationId = "com.music.laya"
@@ -107,8 +108,12 @@ android {
         abi {
             isEnable = true
             reset()
-            include("armeabi-v7a", "arm64-v8a", "x86_64")
-            isUniversalApk = true
+            val localAbi = providers.gradleProperty("layaLocalAbi").orNull
+            if (localAbi != null) {
+                require(localAbi in setOf("armeabi-v7a", "arm64-v8a", "x86_64"))
+                include(localAbi)
+            } else include("armeabi-v7a", "arm64-v8a", "x86_64")
+            isUniversalApk = localAbi == null
         }
     }
 
@@ -259,6 +264,7 @@ val newPipeExtractorRaw: Configuration by configurations.creating {
     isCanBeConsumed = false
 }
 dependencies {
+    implementation("androidx.webkit:webkit:1.18.0")
     newPipeExtractorRaw("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
 }
 val newPipeExtractorStripped = tasks.register<org.gradle.api.tasks.bundling.Jar>(
@@ -444,6 +450,7 @@ dependencies {
     // the OkHttp version already on the runtime classpath.
     testImplementation("com.squareup.okhttp3:mockwebserver:5.3.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    androidTestImplementation("com.squareup.okhttp3:okhttp-tls:5.3.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
     androidTestImplementation("androidx.test.espresso:espresso-core:3.7.0")
 }

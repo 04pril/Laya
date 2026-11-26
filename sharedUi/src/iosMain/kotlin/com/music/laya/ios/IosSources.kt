@@ -16,15 +16,12 @@ internal object IosSourcesHost : SourcesHost {
     override val appVersion: String
         get() = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleShortVersionString") as? String ?: "1.0"
 
-    // Qobuz only: Tidal's streams are segmented manifests, which this player does not play.
-    override fun supports(kind: SourceKind) =
-        kind == SourceKind.ADDON || kind == SourceKind.YOUTUBE || kind == SourceKind.JIOSAAVN || kind == SourceKind.QOBUZ
+    override fun supports(kind: SourceKind) = super.supports(kind) || kind == SourceKind.JIOSAAVN
 
     override fun build(config: SourceConfig): MusicSource? = if (config.kind == SourceKind.JIOSAAVN) JioSaavnSource(config) else null
 
-    // AVPlayer has no way to be told a stream is a DASH/HLS manifest through the range loader the
-    // engine feeds it, so those are passed over like any other stream it can't open. Atmos only
-    // ever arrives that way (Tidal's is a DASH manifest), which is why the Dolby row stays hidden.
+    // Built-in Tidal bridges its own FLAC manifests before this gate. Generic addon manifests
+    // are still unsupported by the byte-range loader, including those carrying Atmos.
     override fun acceptTransport(url: String, transport: String) = false
 
     // What AVPlayer plays out of a plain file: FLAC and ALAC natively, plus the usual lossy ones.
