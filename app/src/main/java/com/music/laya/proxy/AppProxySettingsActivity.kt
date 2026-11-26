@@ -27,6 +27,11 @@ class AppProxySettingsActivity : AppCompatActivity() {
             var kind by remember { mutableStateOf(initial.kind) }
             var host by remember { mutableStateOf(initial.host) }
             var port by remember { mutableStateOf(if (initial.port == 0) "" else initial.port.toString()) }
+            var username by remember { mutableStateOf(initial.username) }
+            // Reuse the saved password only for the same proxy and user name.
+            var password by remember { mutableStateOf("") }
+            val sameLogin = kind == initial.kind && host.trim().equals(initial.host, ignoreCase = true) &&
+                port.toIntOrNull() == initial.port && username.trim() == initial.username
             var error by remember { mutableStateOf(false) }
             var restart by remember { mutableStateOf(false) }
             val importer = rememberWireGuardImportUiState()
@@ -61,15 +66,34 @@ class AppProxySettingsActivity : AppCompatActivity() {
                             OutlinedTextField(host, { host = it; error = false }, label = { Text(androidText("서버 주소", "Server host")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                             Spacer(Modifier.height(12.dp))
                             OutlinedTextField(port, { port = it; error = false }, label = { Text(androidText("포트", "Port")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(username, { username = it; error = false },
+                                label = { Text(androidText("사용자 이름 (선택)", "User name (optional)")) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                            Spacer(Modifier.height(12.dp))
+                            OutlinedTextField(password, { password = it; error = false },
+                                label = { Text(androidText("비밀번호", "Password")) },
+                                placeholder = { Text(if (initial.password.isNotEmpty() && sameLogin)
+                                    androidText("저장됨 (비우면 유지)", "Saved (leave empty to keep)") else androidText("선택", "Optional")) },
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                                singleLine = true, modifier = Modifier.fillMaxWidth())
                         }
                     }
                     importer.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp)) }
-                    if (error) Text(androidText("주소·포트를 확인하고, WireGuard는 먼저 .conf를 가져와 주세요.", "Check the endpoint; import a .conf before enabling WireGuard."), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
+                    if (error) Text(androidText("주소·포트와 로그인 정보를 확인해 주세요. WireGuard는 먼저 .conf를 가져와 주세요.", "Check the endpoint and credentials. Import a .conf before enabling WireGuard."), color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(24.dp))
                     Button(onClick = {
                         val route = when (kind) {
                             AppProxyKind.DIRECT -> AppProxyRoute.DIRECT
                             AppProxyKind.WIREGUARD_LOCAL -> AppProxyRoute(kind, "127.0.0.1", 9)
-                            else -> AppProxyRoute(kind, host.trim(), port.toIntOrNull() ?: 0)
+                            else -> {
+                                val user = username.trim()
+                                val pass = when {
+                                    password.isNotEmpty() -> password
+                                    sameLogin -> initial.password
+                                    else -> ""
+                                }
+                                AppProxyRoute(kind, host.trim(), port.toIntOrNull() ?: 0, username = user, password = pass)
+                            }
                         }
                         if (kind == AppProxyKind.WIREGUARD_LOCAL && !WireGuardProfileStore.hasProfile(this@AppProxySettingsActivity)) error = true
                         else runCatching { route.validated(); AppProxyStore.save(this@AppProxySettingsActivity, route) }

@@ -33,16 +33,17 @@ internal object EncryptedPrefs {
     private val opened = HashMap<String, SharedPreferences>()
 
     @Synchronized
-    fun open(context: Context, name: String, plainName: String): SharedPreferences =
+    fun open(context: Context, name: String, plainName: String? = null): SharedPreferences =
         opened.getOrPut(name) { resolve(context.applicationContext, name, plainName) }
 
-    private fun resolve(context: Context, name: String, plainName: String): SharedPreferences {
+    private fun resolve(context: Context, name: String, plainName: String?): SharedPreferences {
         val encrypted = try {
             create(context, name)
         } catch (e: Throwable) {
             val staleKeyset = isUnverifiable(e) &&
                 context.getSharedPreferences(name, Context.MODE_PRIVATE).contains(KEYSET_ENTRY)
             if (!staleKeyset) {
+                if (plainName == null) throw e
                 Log.w(TAG, "EncryptedSharedPreferences unavailable for $name, falling back: ${describe(e)}")
                 return context.getSharedPreferences(plainName, Context.MODE_PRIVATE)
             }
@@ -51,11 +52,12 @@ internal object EncryptedPrefs {
             try {
                 create(context, name)
             } catch (retry: Throwable) {
+                if (plainName == null) throw retry
                 Log.w(TAG, "$name could not be recreated, falling back: ${describe(retry)}")
                 return context.getSharedPreferences(plainName, Context.MODE_PRIVATE)
             }
         }
-        moveIn(context, plainName, encrypted, name)
+        if (plainName != null) moveIn(context, plainName, encrypted, name)
         return encrypted
     }
 

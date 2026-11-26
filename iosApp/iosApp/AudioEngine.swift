@@ -1036,6 +1036,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// The other copy of the playing track (a better source landing mid-song), loading and cued on the idle deck.
     private var swapItem: AVPlayerItem?
     private var swapObservation: NSKeyValueObservation?
+    /** A swap asked for while the playing copy was still opening, waiting on that copy's status (see swapOnMain). */
+    private var deferredSwap: NSKeyValueObservation?
     private var swapGen = 0
 
     /// Replaces the playing track with another copy of it, at the same position, without stopping the audio: the copy
@@ -1048,6 +1050,23 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     private func swapOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
         cancelSwap()
+        // The playing copy still opening: the better copy usually arrives before it (Tidal's FLAC found 0.4 s after a
+        // YouTube start that sounded at 1.2 s), and was skipped, leaving the whole track on AAC. It waits instead and
+        // swaps in the moment the playing copy is ready; a stop, a new track or another swap drops the wait.
+        if fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .unknown {
+            let generation = swapGen
+            deferredSwap = old.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+                DispatchQueue.main.async {
+                    guard let self, generation == self.swapGen, item.status != .unknown, self.deferredSwap != nil else { return }
+                    self.deferredSwap = nil
+                    guard item === self.currentItem, item.status == .readyToPlay else {
+                        return nativeLog("AudioEngine: source swap dropped; the playing copy did not open")
+                    }
+                    self.swapOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
+                }
+            }
+            return nativeLog("AudioEngine: source swap waits for the playing copy to open")
+        }
         guard fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .readyToPlay,
               let item = makeItem(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
         else { return nativeLog("AudioEngine: source swap skipped") }
@@ -1148,8 +1167,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     private func cancelSwap(resume: Bool = true) {
-        guard let item = swapItem else { return }
         swapGen += 1
+        deferredSwap = nil
+        guard let item = swapItem else { return }
         swapItem = nil
         swapObservation = nil
         idle.pause()

@@ -24,7 +24,7 @@
 "WG_FOOTER_CHECKS" = "국가 확인 후 실제 곡 재생도 확인하세요. 재생 오류가 나면 바로 진단을 복사해주세요.";
 "WG_FOOTER_PROFILE" = "단일 피어와 AllowedIPs 0.0.0.0/0이 있는 표준 .conf를 사용합니다. 개인키는 이 기기의 Keychain에 저장하며 진단에 포함하지 않습니다.";
 "WG_FOOTER_SERVER" = "HTTP·HTTPS는 CONNECT 방식입니다. HTTPS는 프록시 인증서를 확인하며 SOCKS5는 사용자 이름·비밀번호 인증을 지원합니다.";
-"WG_FOOTER_TUNNEL" = "시스템 VPN 없이 앱 안에서 연결합니다. 설정을 바꾼 뒤 앱을 다시 열어주세요. 연결에 실패하면 직접 연결로 우회하지 않습니다.";
+"WG_FOOTER_TUNNEL" = "시스템 VPN 없이 앱 안에서 연결합니다. 설정을 바꾼 뒤 앱을 다시 열어주세요. 연결에 실패하면 직접 연결로 우회하지 않습니다. 단, 뮤직비디오와 앱 안의 움직이는 커버 영상은 iOS 재생기가 직접 받아오므로 이 연결을 거치지 않습니다.";
 "WG_FORCE_STACK" = "호환 연결 방식 사용";
 "WG_HANDSHAKE_AGO" = "%lld초 전에 연결 확인";
 "WG_HANDSHAKE_NONE" = "아직 연결 확인 전";

@@ -143,7 +143,28 @@ object Http {
         }
         startupRoute = validated
         startupProxyAuthorization = proxyAuthorization
+        if (validated.kind == AppProxyKind.SOCKS5 && validated.hasCredentials) answerSocksLogin(validated)
     }
+
+    /**
+     * SOCKS5 user/password login (RFC 1929): the platform's SOCKS socket asks java.net.Authenticator for it, naming
+     * the proxy host and "SOCKS5". Answered for exactly that host and protocol, so no other challenge (a website's,
+     * another proxy's) is ever given these credentials.
+     */
+    private fun answerSocksLogin(route: AppProxyRoute) {
+        java.net.Authenticator.setDefault(socksLogin(route))
+    }
+
+    internal fun socksLogin(route: AppProxyRoute): java.net.Authenticator =
+        object : java.net.Authenticator() {
+            override fun getPasswordAuthentication(): java.net.PasswordAuthentication? {
+                val protocol = requestingProtocol ?: return null
+                if (!protocol.equals("SOCKS5", ignoreCase = true)) return null
+                if (!requestingHost.orEmpty().equals(route.host, ignoreCase = true)) return null
+                if (requestingPort != route.port) return null
+                return java.net.PasswordAuthentication(route.username, route.password.toCharArray())
+            }
+        }
 
     val client: OkHttpClient
         get() = preparedClient ?: synchronized(this) {
@@ -157,6 +178,15 @@ object Http {
             // WireGuard's loopback listener requires per-process Basic auth.
             // OkHttp answers *proxy* 407 challenges, never sends the credential
             // as an Authorization header to Google/YouTube origins.
+            // An HTTP(S) proxy that asks for a login (407): Basic, answered once per request so a wrong
+            // password fails rather than loops.
+            if ((startupRoute.kind == AppProxyKind.HTTP || startupRoute.kind == AppProxyKind.HTTPS) && startupRoute.hasCredentials) {
+                val secret = okhttp3.Credentials.basic(startupRoute.username, startupRoute.password)
+                proxyAuthenticator(okhttp3.Authenticator { _, response ->
+                    if (response.request.header("Proxy-Authorization") == secret) null
+                    else response.request.newBuilder().header("Proxy-Authorization", secret).build()
+                })
+            }
             if (startupRoute.kind == AppProxyKind.WIREGUARD_LOCAL) {
                 proxyAuthenticator(okhttp3.Authenticator { _, response ->
                     val secret = startupProxyAuthorization ?: return@Authenticator null
