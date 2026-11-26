@@ -104,6 +104,9 @@ interface PlayerHost {
     @Composable
     fun rememberAudioOutputs(): List<AudioOutputDevice>
 
+    /** Whether the built-in iOS output should be labeled as an iPad, even in a compact window. */
+    val isIPad: Boolean get() = false
+
     /**
      * Wraps opening the output drawer in whatever it needs first — on Android,
      * the Bluetooth permission that lets it name headphones.

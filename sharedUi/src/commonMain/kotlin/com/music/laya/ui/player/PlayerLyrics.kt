@@ -124,7 +124,6 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
 import org.jetbrains.compose.resources.stringArrayResource
@@ -139,7 +138,9 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextDirection
 import androidx.compose.ui.text.style.ResolvedTextDirection
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -3137,14 +3138,15 @@ private fun CurrentLyricLine(
         ) { (_, lineItem, lineText) ->
             val itemInstrumental = lineItem == null || lineItem.isGap
             val swept = lineItem?.takeIf { !itemInstrumental && it.isWordSynced }
+            val fit = Modifier.fitLyricStripLine()
             if (swept != null) {
                 SweptLyricLine(
                     line = swept,
                     clock = clock,
-                    style = voiceStyle(MaterialTheme.typography.titleMedium, text, alignEnd = false, laneLocked = false),
+                    style = voiceStyle(MaterialTheme.typography.titleMedium, lineText, alignEnd = false, laneLocked = false),
                     dimAlpha = UNSUNG_ALPHA_STRIP,
+                    modifier = fit,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                     rise = false,
                 )
             } else {
@@ -3158,8 +3160,8 @@ private fun CurrentLyricLine(
                         alignEnd = false,
                         laneLocked = false,
                     ),
+                    modifier = fit,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
                 )
             }
         }
@@ -3183,6 +3185,24 @@ private fun CurrentLyricLine(
                     .size(14.dp)
                     .graphicsLayer { scaleX = -1f },
             )
+        }
+    }
+}
+
+/** Fit the whole line after shaping so the dim text and its timed highlight share the same layout. */
+private fun Modifier.fitLyricStripLine(): Modifier = layout { measurable, constraints ->
+    val line = measurable.measure(constraints.copy(minWidth = 0, maxWidth = Constraints.Infinity))
+    val width = line.width.coerceIn(constraints.minWidth, constraints.maxWidth)
+    layout(width, line.height) {
+        if (line.width > width) {
+            line.placeWithLayer(0, 0) {
+                val scale = width.toFloat() / line.width
+                scaleX = scale
+                scaleY = scale
+                transformOrigin = TransformOrigin(0f, 0.5f)
+            }
+        } else {
+            line.placeRelative(0, 0)
         }
     }
 }

@@ -26,6 +26,8 @@ import com.music.laya.ui.player.SystemVolume
 import com.music.laya.ui.screens.SettingsHost
 import dev.chrisbanes.haze.HazeState
 import platform.Foundation.NSBundle
+import platform.UIKit.UIDevice
+import platform.UIKit.UIUserInterfaceIdiomPad
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -75,6 +77,7 @@ internal object IosPlayerHost : PlayerHost {
     // Use available window space, including an unfolded phone, rather than the device name.
     override val supportsExpandedPlayerLayout = true
     override val hasNativeOutputGlyph = true
+    override val isIPad: Boolean get() = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
 
     @Composable
     override fun OutputGlyph(modifier: Modifier) = IosOutputGlyph(modifier)

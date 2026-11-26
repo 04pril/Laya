@@ -114,6 +114,8 @@
     <string name="hdmi_output">HDMI</string>
     <string name="personal_phone">%1$s의 휴대전화</string>
     <string name="this_phone">이 휴대전화</string>
+    <string name="personal_ipad">%1$s의 iPad</string>
+    <string name="this_ipad">이 iPad</string>
     <string name="albums">앨범</string>
     <string name="artists">아티스트</string>
     <string name="card_plays_format">재생 %1$s회</string>
