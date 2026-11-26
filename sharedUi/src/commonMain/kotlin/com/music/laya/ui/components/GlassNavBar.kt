@@ -15,6 +15,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -301,16 +302,18 @@ fun GlassTabRail(
     ) {
         tabs.forEachIndexed { index, tab ->
             val isSelected = index == selectedIndex
+            // The indicator and the tint ease between tabs rather than jumping.
+            val fill by animateColorAsState(if (isSelected) indicator else Color.Transparent, label = "railIndicator")
+            val tint by animateColorAsState(if (isSelected) contentColor else unselectedColor, label = "railTint")
             Box(
-                Modifier.size(48.dp).clip(CircleShape)
-                    .then(if (isSelected) Modifier.background(indicator) else Modifier)
+                Modifier.size(48.dp).clip(CircleShape).background(fill)
                     .clickable {
                         if (!isSelected) haptics.play(Haptic.Select)
                         onTabSelected(index)
                     },
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(tab.icon, contentDescription = tab.label, tint = if (isSelected) contentColor else unselectedColor,
+                Icon(tab.icon, contentDescription = tab.label, tint = tint,
                     modifier = Modifier.size(25.dp))
             }
         }

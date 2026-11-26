@@ -68,6 +68,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.SideEffect
@@ -973,7 +977,41 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         // A detail page draws its own header up under the status bar (as Android's edge to edge does), so only the other pages are inset here.
                         // Pages that draw behind the status bar themselves (Android's edge-to-edge detail and Replay).
                         val onDetail = stack.lastOrNull() is IosPage.Detail || stack.lastOrNull() === IosPage.Replay
-                        Box(Modifier.fillMaxSize().then(if (onDetail) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars))) {
+                        // Page motion, as UINavigationController's: a pushed page slides in from the right, the page
+                        // under a popped one comes back from a little to the left, the back swipe drags the page with
+                        // the finger, and a tab switch fades in. Only the top page is composed, so the motion is its own.
+                        val pageWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                        val pageShift = remember { Animatable(0f) }
+                        val pageFade = remember { Animatable(1f) }
+                        var shownDepth by remember { mutableStateOf(stack.size) }
+                        var shownTab by remember { mutableStateOf(tab) }
+                        LaunchedEffect(stack.size, tab) {
+                            val depth = stack.size
+                            when {
+                                tab != shownTab -> {
+                                    pageShift.snapTo(0f)
+                                    pageFade.snapTo(0.35f)
+                                    pageFade.animateTo(1f, tween(220))
+                                }
+                                depth > shownDepth -> {
+                                    pageFade.snapTo(1f)
+                                    pageShift.snapTo(pageWidth)
+                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
+                                }
+                                depth < shownDepth -> {
+                                    pageFade.snapTo(0.8f)
+                                    pageShift.snapTo(-pageWidth * 0.25f)
+                                    launch { pageFade.animateTo(1f, tween(260)) }
+                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
+                                }
+                            }
+                            shownDepth = depth
+                            shownTab = tab
+                        }
+                        Box(Modifier.fillMaxSize().graphicsLayer {
+                            translationX = pageShift.value
+                            alpha = pageFade.value
+                        }.then(if (onDetail) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars))) {
                             val top = stack.lastOrNull()
                             when (if (top == null) tab else -1) {
                             -1 -> {
@@ -1411,11 +1449,23 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             Modifier.align(Alignment.CenterStart).fillMaxHeight().width(20.dp)
                                 .pointerInput(stack.size) {
                                     var dragged = 0f
+                                    fun settleBack() { scope.launch { pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 600f)) } }
                                     detectHorizontalDragGestures(
                                         onDragStart = { dragged = 0f },
-                                        onDragEnd = { if (dragged > 72.dp.toPx()) { focusManager.clearFocus(); stack = stack.dropLast(1) } },
-                                        onDragCancel = { dragged = 0f },
-                                    ) { change, amount -> change.consume(); dragged += amount }
+                                        onDragEnd = {
+                                            if (dragged > 72.dp.toPx()) scope.launch {
+                                                // Off to the right with the finger's momentum, then the page under it.
+                                                pageShift.animateTo(pageWidth, tween(160))
+                                                focusManager.clearFocus()
+                                                stack = stack.dropLast(1)
+                                            } else settleBack()
+                                        },
+                                        onDragCancel = { dragged = 0f; settleBack() },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragged += amount
+                                        scope.launch { pageShift.snapTo(dragged.coerceAtLeast(0f)) }
+                                    }
                                 },
                         )
                     }
