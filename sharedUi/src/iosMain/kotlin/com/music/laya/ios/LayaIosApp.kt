@@ -1572,8 +1572,10 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             onDismissPlayer = {
                                 if (player.song?.queueEntryId == song?.queueEntryId) { player.stopAndDismiss(); nowPlayingOpen = false }
                             },
-                            // Stops short of the tab rail at the foot of the status strip, as BitChord's does.
-                            modifier = Modifier.align(if (duo.railOnRight) Alignment.BottomStart else Alignment.BottomEnd)
+                            // Stops short of the tab rail at the foot of the status strip, as BitChord's does, and on a
+                            // wide (unfolded, sideways) window sits centred in the room left of it at the usual 640 pt
+                            // rather than against the left edge.
+                            modifier = Modifier.align(Alignment.BottomCenter)
                                 .padding(start = if (duo.railOnRight) 0.dp else duo.strip.dp, end = if (duo.railOnRight) duo.strip.dp else 0.dp)
                                 .widthIn(max = 640.dp).fillMaxWidth().onSizeChanged {
                                 barHeight = with(density) { it.height.toDp() }
