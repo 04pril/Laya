@@ -70,6 +70,12 @@ interface AudioEngineListener {
     fun onEnded()
     fun onAdvancedToNext()
 
+    /**
+     * Main thread. A [AudioEngine.swapCurrent] ended: [applied] when the copy took over, false when the engine stayed
+     * on the playing copy (refused, failed to load, could not line up). Not called when a stop or new track drops it.
+     */
+    fun onSourceSwap(applied: Boolean)
+
     /** The current item's decoded format once it is ready (0 where unknown): [mimeType] in Media3's naming, e.g. audio/mp4a-latm. */
     fun onAudioFormat(mimeType: String?, sampleRateHz: Int, channels: Int, bitDepth: Int, bitrateKbps: Int)
 

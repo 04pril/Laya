@@ -330,6 +330,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// The asset being inspected before insertion, so a queue change can cancel its pending reads.
     private var preparingNextAsset: Built?
     private var nextGeneration = 0
+    /// How long the next track's length may take to read before it is queued without the end correction.
+    private static let nextDurationWait: TimeInterval = 3
     /// Where the next track's asset is built. Creating an AVURLAsset asks mediaserverd synchronously; done on main,
     /// a slow answer froze the UI until the scene-update watchdog killed the app (0x8BADF00D, build 56). Serial, so
     /// one build waits for the one before it rather than piling up.
@@ -370,6 +372,15 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                         guard self?.preparingNext == generation else { return }
                         let duration = (try? await asset.load(.duration))?.seconds ?? .nan
                         self?.insertPreparedNext(generation: generation, file: file, nativeDuration: duration)
+                    }
+                    // A slow network must not hold the next track out of the queue: that turns a gapless join into
+                    // a stop and a fresh start. Past this, it goes in without the boundary (whichever comes first wins;
+                    // insertPreparedNext takes a generation once).
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.nextDurationWait) { [weak self] in
+                        guard let self, self.preparingNext == generation else { return }
+                        nativeLog(String(format: "AudioEngine: the next track's length took over %.0f s; queued without the end correction",
+                                         Self.nextDurationWait), warn: true)
+                        self.insertPreparedNext(generation: generation, file: file, nativeDuration: .nan)
                     }
                 } else {
                     self.insertPreparedNext(generation: generation, file: nil, nativeDuration: .nan)
@@ -1176,7 +1187,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     guard let self, generation == self.swapGen, item.status != .unknown, self.deferredSwap != nil else { return }
                     self.deferredSwap = nil
                     guard item === self.currentItem, item.status == .readyToPlay else {
-                        return nativeLog("AudioEngine: source swap dropped; the playing copy did not open")
+                        return self.swapRefused("dropped; the playing copy did not open")
                     }
                     self.swapOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
                 }
@@ -1185,7 +1196,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         }
         guard fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .readyToPlay,
               let item = makeItem(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
-        else { return nativeLog("AudioEngine: source swap skipped") }
+        else { return swapRefused("skipped") }
         clearNextOnMain() // Kotlin queues it again once the swap is in
         swapItem = item
         swapGen += 1
@@ -1202,8 +1213,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.swapObservation = nil
                     self.swapAlign(item, deck, gen, attempt: 0)
                 } else if item.status == .failed {
-                    nativeLog("AudioEngine: source swap failed to load; staying on the playing copy", warn: true)
                     self.cancelSwap()
+                    self.swapRefused("failed to load; staying on the playing copy", warn: true)
                 }
             }
         }
@@ -1217,7 +1228,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // A FLAC cue is far more data than an Opus one; the lead grows each time the copy can't get there in time.
         let target = player.currentTime().seconds + (running ? (1.5 + 1.5 * Double(attempt)) * Double(rate) : 0)
         func retry() {
-            if attempt >= 3 { nativeLog("AudioEngine: source swap could not line up; staying on the playing copy", warn: true); return cancelSwap() }
+            if attempt >= 3 { cancelSwap(); return swapRefused("could not line up; staying on the playing copy", warn: true) }
             swapAlign(item, deck, gen, attempt: attempt + 1)
         }
         deck.seek(to: CMTime(seconds: target, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] done in
@@ -1280,6 +1291,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         reportProgress()
         updateNowPlayingTiming()
         nativeLog("AudioEngine: source swapped at \(player.currentTime().seconds)s")
+        listener?.onSourceSwap(applied: true)
+    }
+
+    /// The asked-for copy will not play: Kotlin puts its record of the playing source back (what the player shows,
+    /// the failure memory), which it had already moved to the copy when it asked.
+    private func swapRefused(_ why: String, warn: Bool = false) {
+        nativeLog("AudioEngine: source swap \(why)", warn: warn)
+        listener?.onSourceSwap(applied: false)
     }
 
     private func cancelSwap(resume: Bool = true) {
