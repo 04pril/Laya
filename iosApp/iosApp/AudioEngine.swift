@@ -54,11 +54,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// Racing through a silent stretch (see EqualizerTap.listen).
     private var skipping = false
     private var currentItem: AVPlayerItem?
-    private var nextItem: AVPlayerItem? {
-        didSet {
-            if oldValue !== nextItem { nextStatusObservation = nil }
-        }
-    }
+    private var nextItem: AVPlayerItem?
     /// Items already reported as failed, so the status, the notification and the loader don't report one failure three times.
     private var failedItems = Set<ObjectIdentifier>()
     /// Where the clock last stood still, and since when (see reportProgress).
@@ -67,7 +63,6 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private var lastWatchedPosition: Double = -1
 
     private var statusObservation: NSKeyValueObservation?
-    private var nextStatusObservation: NSKeyValueObservation?
     private var notificationTokens: [NSObjectProtocol] = []
     private var pendingSeekMs: Int64?
     /// Target of a seek still in flight. Reported as the position until it lands,
@@ -332,6 +327,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// Generation of the next track's asset being built off main; nil when none is. A clear, a stop or a new
     /// pending track moves on from it, and a build that lands for an old generation is thrown away.
     private var preparingNext: Int?
+    /// The asset being inspected before insertion, so a queue change can cancel its pending reads.
+    private var preparingNextAsset: Built?
     private var nextGeneration = 0
     /// Where the next track's asset is built. Creating an AVURLAsset asks mediaserverd synchronously; done on main,
     /// a slow answer froze the UI until the scene-update watchdog killed the app (0x8BADF00D, build 56). Serial, so
@@ -354,25 +351,53 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         Self.assetQueue.async { [weak self] in
             let built = Self.build(url: p.url, headers: p.headers, mimeType: p.mimeType,
                                    contentLength: p.contentLength, chunkBytes: p.chunkBytes)
+            let file = built.flatMap { Self.fileDuration(for: $0.item.asset, savedMs: p.fileDurationMs) }
             DispatchQueue.main.async {
                 guard let self, self.preparingNext == generation, self.currentItem != nil else {
                     built?.loader?.cancelAll() // superseded while it was built: a clear, a stop, a new track
                     return
                 }
-                self.preparingNext = nil
                 let took = CACurrentMediaTime() - asked
                 if took > 1 {
                     nativeLog(String(format: "AudioEngine: the next track's asset took %.1f s to create (off main)", took), warn: true)
                 }
-                guard let built else { return }
-                let item = self.adopt(built)
-                self.readFileDuration(for: item, savedMs: p.fileDurationMs)
-                self.nextItem = item
-                self.fadeSkipped = false
-                self.place(item)
-                self.updateFadeTimer()
+                guard let built else { self.preparingNext = nil; return }
+                self.preparingNextAsset = built
+                if file != nil || built.loader?.durationHint != nil || p.mimeType.hasPrefix("audio/flac") {
+                    // A boundary change on an already enqueued item can interrupt the outgoing audio.
+                    let asset = built.item.asset
+                    Task { @MainActor [weak self] in
+                        guard self?.preparingNext == generation else { return }
+                        let duration = (try? await asset.load(.duration))?.seconds ?? .nan
+                        self?.insertPreparedNext(generation: generation, file: file, nativeDuration: duration)
+                    }
+                } else {
+                    self.insertPreparedNext(generation: generation, file: nil, nativeDuration: .nan)
+                }
             }
         }
+    }
+
+    private func insertPreparedNext(generation: Int, file: FileDuration?, nativeDuration: Double) {
+        guard preparingNext == generation, currentItem != nil, let built = preparingNextAsset else { return }
+        preparingNext = nil
+        preparingNextAsset = nil
+        let item = adopt(built)
+        if let file { fileDurations.setObject(file, forKey: item.asset) }
+        configurePlaybackEnd(for: item, nativeDuration: nativeDuration, beforeInsertion: true)
+        nextItem = item
+        fadeSkipped = false
+        place(item)
+        updateFadeTimer()
+    }
+
+    private func cancelNextPreparation() {
+        preparingNext = nil
+        guard let built = preparingNextAsset else { return }
+        preparingNextAsset = nil
+        built.loader?.cancelAll()
+        let asset = built.item.asset
+        Self.assetQueue.async { asset.cancelLoading() }
     }
 
     func clearNext() { onMain { self.clearNextOnMain() } }
@@ -380,7 +405,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func clearNextOnMain() {
         if let f = fade, !f.swapped { return }
         pendingNext = nil
-        preparingNext = nil
+        cancelNextPreparation()
         guard let item = nextItem else { return }
         nextItem = nil
         if parked { idle.removeAllItems(); parked = false } else { player.remove(item) }
@@ -450,7 +475,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     func stop() {
         cancelSwap(resume: false)
         pendingNext = nil
-        preparingNext = nil
+        cancelNextPreparation()
         for deck in [player, idle] { deck.pause(); deck.removeAllItems(); deck.volume = appGain }
         fade = nil
         easing = false
@@ -903,9 +928,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     /// The track's length as its source states it, when one does: googlevideo's dur=, or a FLAC's STREAMINFO.
-    private func exactDuration(of item: AVPlayerItem) -> Double? {
+    private func exactDuration(of item: AVPlayerItem, nativeDuration: Double? = nil) -> Double? {
         if let file = fileDurations.object(forKey: item.asset),
-           !file.estimated || PlaybackDuration.correctsDoubledTimeline(native: item.duration.seconds, file: file.seconds) {
+           !file.estimated || PlaybackDuration.correctsDoubledTimeline(native: nativeDuration ?? item.duration.seconds, file: file.seconds) {
             return file.seconds
         }
         guard let loader = loaders[ObjectIdentifier(item)] else { return nil }
@@ -914,40 +939,46 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         return nil
     }
 
-    private func readFileDuration(for item: AVPlayerItem, savedMs: Int64) {
-        guard let asset = item.asset as? AVURLAsset, asset.url.isFileURL else { return }
+    private static func fileDuration(for asset: AVAsset, savedMs: Int64) -> FileDuration? {
+        guard let asset = asset as? AVURLAsset, asset.url.isFileURL else { return nil }
         if savedMs > 0 {
-            fileDurations.setObject(FileDuration(seconds: Double(savedMs) / 1000, estimated: false), forKey: asset)
+            return FileDuration(seconds: Double(savedMs) / 1000, estimated: false)
+        }
+        guard asset.url.pathExtension.lowercased() == "m4a", let seconds = PlaybackDuration.estimateAAC(in: asset.url) else { return nil }
+        return FileDuration(seconds: seconds, estimated: true)
+    }
+
+    private func readFileDuration(for item: AVPlayerItem, savedMs: Int64) {
+        let asset = item.asset
+        if savedMs > 0 {
+            if let file = Self.fileDuration(for: asset, savedMs: savedMs) {
+                fileDurations.setObject(file, forKey: asset)
+            }
             return
         }
-        guard asset.url.pathExtension.lowercased() == "m4a" else { return }
-        let url = asset.url
+        guard let urlAsset = asset as? AVURLAsset, urlAsset.url.isFileURL, urlAsset.url.pathExtension.lowercased() == "m4a" else { return }
         DispatchQueue.global(qos: .utility).async { [weak self, weak asset] in
-            guard let seconds = PlaybackDuration.estimateAAC(in: url) else { return }
+            guard let asset, let file = Self.fileDuration(for: asset, savedMs: 0) else { return }
             DispatchQueue.main.async { [weak self, weak asset] in
-                guard let self, let asset,
-                      self.currentItem?.asset === asset || self.nextItem?.asset === asset else { return }
-                self.fileDurations.setObject(FileDuration(seconds: seconds, estimated: true), forKey: asset)
-                if let current = self.currentItem, current.asset === asset {
-                    self.configurePlaybackEnd(for: current)
-                    self.reportProgress()
-                    self.updateNowPlayingTiming()
-                } else if let next = self.nextItem, next.asset === asset, next !== self.player.currentItem {
-                    self.configurePlaybackEnd(for: next, queued: true)
-                }
+                guard let self, let asset, let current = self.currentItem, current.asset === asset else { return }
+                self.fileDurations.setObject(file, forKey: asset)
+                self.configurePlaybackEnd(for: current)
+                self.reportProgress()
+                self.updateNowPlayingTiming()
             }
         }
     }
 
     @discardableResult
-    private func configurePlaybackEnd(for item: AVPlayerItem, queued: Bool = false) -> Double? {
-        guard let end = PlaybackDuration.endpoint(native: item.duration.seconds, known: exactDuration(of: item)) else { return nil }
+    private func configurePlaybackEnd(for item: AVPlayerItem, nativeDuration: Double? = nil, beforeInsertion: Bool = false) -> Double? {
+        let native = nativeDuration ?? item.duration.seconds
+        guard let end = PlaybackDuration.endpoint(native: native, known: exactDuration(of: item, nativeDuration: native)) else { return nil }
         let boundary = CMTime(seconds: end, preferredTimescale: 1000)
         if item.forwardPlaybackEndTime != boundary {
             item.forwardPlaybackEndTime = boundary
             nativeLog(String(format: "AudioEngine: corrected duration from %.3fs to %.3fs (%@)%@",
-                             item.duration.seconds, end, fileDurations.object(forKey: item.asset) == nil ? "stream" : "file",
-                             queued ? " before queue advance" : ""))
+                             native, end, fileDurations.object(forKey: item.asset) == nil ? "stream" : "file",
+                             beforeInsertion ? " before queue insertion" : ""))
         }
         return end
     }
@@ -1314,14 +1345,6 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     /// Puts [item], which sits on no deck, where the plan needs it: parked on the idle deck for a fade, behind the current item otherwise.
     private func place(_ item: AVPlayerItem) {
-        // Set the corrected boundary while the item buffers, so promotion needn't change the range as audio starts.
-        nextStatusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
-            DispatchQueue.main.async {
-                guard let self, item === self.nextItem, item !== self.player.currentItem, item.status != .unknown else { return }
-                self.nextStatusObservation = nil
-                if item.status == .readyToPlay { self.configurePlaybackEnd(for: item, queued: true) }
-            }
-        }
         if fade == nil && transition.fadeMs > 0 && !fadeSkipped {
             idle.removeAllItems()
             idle.insert(item, after: nil)
@@ -1342,6 +1365,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             if parked { idle.removeAllItems() } else { player.remove(old) }
             let item = AVPlayerItem(asset: old.asset)
             item.preferredForwardBufferDuration = old.preferredForwardBufferDuration
+            item.forwardPlaybackEndTime = old.forwardPlaybackEndTime
             if let loader = loaders.removeValue(forKey: ObjectIdentifier(old)) { adopt(loader, for: item) }
             prepare(item)
             nextItem = item
