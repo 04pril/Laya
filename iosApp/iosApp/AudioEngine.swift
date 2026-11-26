@@ -304,6 +304,17 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// one build waits for the one before it rather than piling up.
     private static let assetQueue = DispatchQueue(label: "laya.next-asset", qos: .userInitiated)
 
+    /// Seconds of [item] loaded from its playhead on.
+    private func bufferedAhead(_ item: AVPlayerItem) -> Double {
+        let at = item.currentTime().seconds
+        for value in item.loadedTimeRanges {
+            let r = value.timeRangeValue
+            let start = r.start.seconds, end = (r.start + r.duration).seconds
+            if start <= at + 0.5, end > at { return end - max(at, 0) }
+        }
+        return 0
+    }
+
     private func materializeNextIfDue() {
         guard let p = pendingNext, preparingNext == nil, let current = currentItem, swapItem == nil else { return }
         let duration = streamDuration(of: current)
@@ -336,6 +347,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 self.fadeSkipped = false
                 self.place(item)
                 self.updateFadeTimer()
+                let left = self.currentItem.map { self.streamDuration(of: $0) - $0.currentTime().seconds } ?? -1
+                nativeLog(String(format: "AudioEngine: next track placed with %.1f s left (asset %.2f s, parked=%@)", left, took, self.parked ? "true" : "false"))
             }
         }
     }
@@ -995,6 +1008,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             return
         }
         if now === nextItem {
+            // #6: the join stalled 0.7 s with this item queued. How much of it AVPlayer had fetched says whether
+            // the queued item was ever loading ahead.
+            nativeLog(String(format: "AudioEngine: advanced to the next track (status=%d, buffered %.1f s, likelyToKeepUp=%@)",
+                             now.status.rawValue, bufferedAhead(now), now.isPlaybackLikelyToKeepUp ? "true" : "false"))
             IosDsp.shared.reset()
             setSkipping(false)
             nextItem = nil
@@ -1059,7 +1076,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     guard let self, item.status != .unknown, self.deferredSwap != nil else { return }
                     self.deferredSwap = nil
                     guard item === self.currentItem, item.status == .readyToPlay else {
-                        return nativeLog("AudioEngine: source swap dropped; the playing copy did not open")
+                        return self.swapRefused("dropped; the playing copy did not open")
                     }
                     self.swapOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
                 }
@@ -1068,7 +1085,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         }
         guard fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .readyToPlay,
               let item = makeItem(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
-        else { return nativeLog("AudioEngine: source swap skipped") }
+        else { return swapRefused("skipped") }
         clearNextOnMain() // Kotlin queues it again once the swap is in
         swapItem = item
         swapGen += 1
@@ -1085,8 +1102,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.swapObservation = nil
                     self.swapAlign(item, deck, gen, attempt: 0)
                 } else if item.status == .failed {
-                    nativeLog("AudioEngine: source swap failed to load; staying on the playing copy", warn: true)
                     self.cancelSwap()
+                    self.swapRefused("failed to load; staying on the playing copy", warn: true)
                 }
             }
         }
@@ -1100,7 +1117,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // A FLAC cue is far more data than an Opus one; the lead grows each time the copy can't get there in time.
         let target = player.currentTime().seconds + (running ? (1.5 + 1.5 * Double(attempt)) * Double(rate) : 0)
         func retry() {
-            if attempt >= 3 { nativeLog("AudioEngine: source swap could not line up; staying on the playing copy", warn: true); return cancelSwap() }
+            if attempt >= 3 { cancelSwap(); return swapRefused("could not line up; staying on the playing copy", warn: true) }
             swapAlign(item, deck, gen, attempt: attempt + 1)
         }
         deck.seek(to: CMTime(seconds: target, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] done in
@@ -1163,6 +1180,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         reportProgress()
         updateNowPlayingTiming()
         nativeLog("AudioEngine: source swapped at \(player.currentTime().seconds)s")
+        listener?.onSourceSwap(applied: true)
+    }
+
+    /// The asked-for copy will not play: Kotlin puts its record of the playing source back (what the player shows,
+    /// the failure memory), which it had already moved to the copy when it asked.
+    private func swapRefused(_ why: String, warn: Bool = false) {
+        nativeLog("AudioEngine: source swap \(why)", warn: warn)
+        listener?.onSourceSwap(applied: false)
     }
 
     private func cancelSwap(resume: Bool = true) {
