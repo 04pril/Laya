@@ -339,10 +339,11 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     private func fail(_ s: Serve, _ status: Int) {
         noteFailure("stream HTTP \(status) at \(s.next)")
-        if [403, 404, 410].contains(status), !reportedHTTPError {
-            reportedHTTPError = true
-            onHTTPError?(status)
-        }
+        // The download behind this stream has given up (a refusal, or its retries spent), so this request can never
+        // be answered. Told to the engine every time, whatever the status: AVFoundation does not reliably fail an
+        // item when a loading request errors and may wait on it for good, which left a Qobuz track silent with no
+        // fallback. The engine acts once per item, and only for the one playing (a queued one, when it starts).
+        onHTTPError?(status)
         finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]))
     }
 
