@@ -12,10 +12,9 @@ import com.music.laya.data.model.Song
 import com.music.laya.data.model.UiState
 import com.music.laya.data.settings.AppSettings
 import com.music.laya.data.settings.DownloadQuality
-import com.music.laya.data.sources.SourceKind
 import com.music.laya.data.sources.SourceResolver
-import com.music.laya.data.sources.SourceStream
 import com.music.laya.data.sources.TrackMatcher
+import com.music.laya.data.sources.lossless.DashAudio
 import com.music.laya.platform.ioDispatcher
 import com.music.laya.platform.ktorClient
 import com.music.laya.playback.youtubeSeedFor
@@ -82,6 +81,7 @@ internal const val DOWNLOADS_BROWSE_ID = "local:downloads"
 internal object IosDownloads {
     private const val SOURCE_LOOKUP_MS = 20_000L
     private const val CHUNK_BYTES = 2L * 1024 * 1024
+    private const val DASH_PLAN_LIMIT = 64
 
     @Serializable
     private class Entry(
@@ -96,6 +96,19 @@ internal object IosDownloads {
     private val fs = FileSystem.SYSTEM
     private val json = Json { ignoreUnknownKeys = true }
     private val client by lazy { ktorClient { } }
+
+    /**
+     * Tidal's FLAC on iOS is a DASH manifest the player reads as a loopback HLS playlist; the stream a download is
+     * handed is that playlist's URL. Its segments, by that URL, so a download fetches them from Tidal directly.
+     */
+    private val dashPlans = MutableStateFlow<Map<String, DashAudio.Plan>>(emptyMap())
+
+    fun rememberDash(playlistUrl: String, plan: DashAudio.Plan) {
+        dashPlans.update { previous ->
+            val plans = previous - playlistUrl + (playlistUrl to plan)
+            if (plans.size > DASH_PLAN_LIMIT) plans - plans.keys.first() else plans
+        }
+    }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private val gate = Mutex() // one transfer at a time, the rest read "Queued"
     private val jobs = mutableMapOf<String, Job>()
@@ -256,25 +269,20 @@ internal object IosDownloads {
 
     /** The stream to keep: a source's file when one is storable, else YouTube's AAC under the quality's ceiling. */
     private suspend fun routeFor(song: Song, quality: DownloadQuality): Route {
-        fromSources(song, quality)?.let { (stream, ext) ->
-            val format = stream.format
-            return Route(
-                ext, if (format.isDolbyAtmos) "DOLBY" else if (ext == "flac") "FLAC" else null,
-            ) { sink, progress -> fetchDirect(stream.url, stream.headers, sink, progress) }
-        }
+        fromSources(song, quality)?.let { return it }
         val ytId = youtubeSeedFor(song) ?: error("No YouTube match for this track")
         // m4a only: AVPlayer can't play the WebM/Opus rungs.
         val stream = StreamResolver.resolveForDownload(ytId, quality.maxKbps, requireM4a = true)
         return Route("m4a", if (stream.kbps > 0) "AAC · ${stream.kbps} kbps" else null) { sink, progress -> fetchRanged(stream.url, sink, progress) }
     }
 
-    /** Android's fromSources: bounded, and null is not a failure, just YouTube's turn. Manifests (HLS/DASH) are not assembled on iOS. */
-    private suspend fun fromSources(song: Song, quality: DownloadQuality): Pair<SourceStream, String>? {
+    /** Resolve a downloadable source within the lookup budget, including registered Tidal DASH plans. */
+    private suspend fun fromSources(song: Song, quality: DownloadQuality): Route? {
         val stream = withTimeoutOrNull(SOURCE_LOOKUP_MS) {
             try {
-                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality)) {
-                    it != SourceKind.TIDAL
-                }
+                // Tidal included: its FLAC arrives as DASH, saved by fetchDash. Left out, a Qobuz rate limit sent
+                // a "Lossless" download to YouTube's AAC with Tidal holding the FLAC.
+                SourceResolver.forDownload(TrackMatcher.targetOf(song), SourceResolver.requestForDownload(quality))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -282,6 +290,9 @@ internal object IosDownloads {
                 null
             }
         } ?: return null
+        dashPlans.value[stream.url]?.let { plan ->
+            return Route("m4a", "FLAC") { sink, progress -> fetchDash(plan, sink, progress) }
+        }
         val path = stream.url.substringBefore('?').lowercase()
         if (path.endsWith(".m3u8") || path.endsWith(".mpd")) return null
         val ext = when (stream.format.codec?.lowercase()?.trim()) {
@@ -293,7 +304,12 @@ internal object IosDownloads {
             "alac", "m4a", "mp4", "eac3-joc", "ec3-joc", "dolby-atmos" -> "m4a"
             else -> return null
         }
-        return stream to ext
+        val badge = when {
+            stream.format.isDolbyAtmos -> "DOLBY"
+            ext == "flac" -> "FLAC"
+            else -> null
+        }
+        return Route(ext, badge) { sink, progress -> fetchDirect(stream.url, stream.headers, sink, progress) }
     }
 
     // ---- Fetching -----------------------------------------------------------
@@ -355,6 +371,35 @@ internal object IosDownloads {
             } catch (e: Exception) {
                 if (written == 0L || ++attempt > RESUMES) throw e
                 TrackLog.w("Laya", "download dropped at ${written}B (${e.message}); resuming")
+            }
+        }
+    }
+
+    /** A DASH rendition's initialization segment, then each media segment in order, into one file. */
+    private suspend fun fetchDash(plan: DashAudio.Plan, sink: BufferedSink, progress: (Long, Long) -> Unit) {
+        val parts = listOf(plan.initialization) + plan.media
+        parts.forEachIndexed { at, url ->
+            // Only retry the network read. The sink might already have written bytes if it throws.
+            sink.write(fetchDashSegment(url, at))
+            progress(at + 1L, parts.size.toLong())
+        }
+    }
+
+    private suspend fun fetchDashSegment(url: String, index: Int): ByteArray {
+        var attempt = 0
+        while (true) {
+            try {
+                val response = client.get(url)
+                check(response.status.isSuccess()) { "HTTP ${response.status.value}" }
+                val bytes = response.bodyAsBytes()
+                check(bytes.isNotEmpty()) { "Empty segment" }
+                return bytes
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (++attempt > RESUMES) error("Tidal download failed at segment $index")
+                // Request exceptions may include the broker's signed segment URL.
+                TrackLog.w("Laya", "Tidal download segment $index failed (${e::class.simpleName}); retry $attempt/$RESUMES")
             }
         }
     }
