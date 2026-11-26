@@ -40,10 +40,12 @@ abstract class ColorMediaWidget : AppWidgetProvider() {
             val snapshot = MediaWidgetSnapshot.load(context)
             val cover = MediaWidgetArt.loadArtwork(context, snapshot.artworkUrl, 512)
             val image = colorSurface(cover, wide)
+            val art = coverCard(cover)
             val manager = AppWidgetManager.getInstance(context)
             for (id in ids) {
                 val views = RemoteViews(context.packageName, if (wide) R.layout.widget_color_wide else R.layout.widget_color_square)
                 views.setImageViewBitmap(R.id.color_surface, image)
+                if (art != null) views.setImageViewBitmap(R.id.color_cover, art) else views.setImageViewResource(R.id.color_cover, R.drawable.widget_music_glyph)
                 views.setTextViewText(R.id.color_title, snapshot.title.ifBlank { "Laya" })
                 views.setTextViewText(R.id.color_artist, snapshot.artist)
                 views.setImageViewResource(R.id.color_play, if (snapshot.isPlaying) R.drawable.ic_widget_pause else R.drawable.ic_widget_play)
@@ -83,14 +85,25 @@ abstract class ColorMediaWidget : AppWidgetProvider() {
             canvas.drawRect(0f,0f,w.toFloat(),h.toFloat(),paint)
             paint.shader=RadialGradient(w*.54f,h*1.02f,w*.8f,intArrayOf(0x40000000,0),null,Shader.TileMode.CLAMP)
             canvas.drawRect(0f,0f,w.toFloat(),h.toFloat(),paint);paint.shader=null
-            cover?.let {
-                val rect=if(wide) RectF(22f,22f,294f,294f) else RectF(31f,31f,165f,165f)
-                val shader=BitmapShader(it,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP)
-                val scale=max(rect.width()/it.width,rect.height()/it.height)
-                shader.setLocalMatrix(Matrix().apply { setScale(scale,scale);postTranslate(rect.centerX()-it.width*scale/2,rect.centerY()-it.height*scale/2) })
-                paint.shader=shader;canvas.drawRoundRect(rect,rect.width()*.115f,rect.width()*.115f,paint);paint.shader=null
-            }
             small.recycle()
+            return result
+        }
+
+        /**
+         * The cover as a square card with WidgetPod's curved corners, for its own ImageView. It used to be painted
+         * into [colorSurface] at fixed spots of a 676x316 bitmap that fitXY then stretched to the widget: on a
+         * taller widget the cover came out a tall rectangle and off its place.
+         */
+        internal fun coverCard(cover: Bitmap?): Bitmap? {
+            cover ?: return null
+            val side = 288
+            val result = Bitmap.createBitmap(side, side, Bitmap.Config.ARGB_8888)
+            val rect = RectF(0f, 0f, side.toFloat(), side.toFloat())
+            val shader = BitmapShader(cover, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            val scale = max(rect.width() / cover.width, rect.height() / cover.height)
+            shader.setLocalMatrix(Matrix().apply { setScale(scale, scale); postTranslate(rect.centerX() - cover.width * scale / 2, rect.centerY() - cover.height * scale / 2) })
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { this.shader = shader }
+            Canvas(result).drawRoundRect(rect, side * .115f, side * .115f, paint)
             return result
         }
         private fun dominantAccent(pixels: IntArray): Int {
