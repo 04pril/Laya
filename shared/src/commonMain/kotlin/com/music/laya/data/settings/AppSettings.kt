@@ -835,6 +835,7 @@ object AppSettings {
     fun init(settings: Settings, host: AppSettingsHost) {
         prefs = Prefs(settings)
         HomeLayoutPreferences.install(settings)
+        com.music.laya.data.sources.PlaybackFailures.install(settings)
         this.host = host
         readAll()
     }
