@@ -340,6 +340,27 @@ class SourcesTest {
     }
 
     @Test
+    fun `rejects a different artist cover marked only in the album even at the original duration`() {
+        val original = TrackMatcher.Target("Sour Grapes", "LE SSERAFIM", durationSec = 197)
+        val cover = song("Sour Grapes", "金冬天", "3:16", album = "Sour Grapes（Cover LE SSERAFIM）")
+        assertNull(TrackMatcher.best(listOf(cover), original))
+        assertEquals(
+            cover,
+            TrackMatcher.best(listOf(cover), original.copy(artist = cover.artist, album = cover.albumName)),
+        )
+    }
+
+    @Test
+    fun `keeps Korean titles in queries and one syllable Korean artist credits in matching`() {
+        val target = TrackMatcher.Target("밤소풍", "비", durationSec = 197)
+        assertEquals(listOf("밤소풍 비", "밤소풍"), TrackMatcher.queries(target))
+        assertTrue(TrackMatcher.sharesArtist("비", "비"))
+        assertFalse(TrackMatcher.sharesArtist("비", "린"))
+        val cover = song("밤소풍", "린", "3:17", album = "밤소풍 (커버)")
+        assertNull(TrackMatcher.best(listOf(cover), target))
+    }
+
+    @Test
     fun `accepts a shared artist when catalogues credit differently`() {
         assertTrue(
             matches(
@@ -1347,6 +1368,27 @@ class SourcesTest {
                 requireSharedArtist = true,
             ),
         )
+    }
+
+    @Test
+    fun `lossless substitution keeps the original when the catalogue has no matching artist`() = runBlocking {
+        val target = TrackMatcher.Target("밤소풍", "스텔라장", durationSec = 197)
+        val cover = song("밤소풍", "다른 가수", "3:17")
+        val unattributed = song("밤소풍", "Unknown Artist", "3:17")
+        val original = song("밤소풍", "스텔라장", "3:17").copy(videoId = "original")
+
+        for (kind in listOf(SourceKind.ADDON, SourceKind.QOBUZ, SourceKind.TIDAL)) {
+            val wrong = FakeSource(
+                kind.label, 0, StreamFormat("flac"), kind, listOf(cover, unattributed),
+            )
+            assertNull(SourceResolver.bestAcross(listOf(wrong), target, StreamRequest.Lossless))
+
+            val correct = FakeSource(
+                kind.label, 0, StreamFormat("flac"), kind, listOf(cover, original),
+            )
+            val match = SourceResolver.bestAcross(listOf(correct), target, StreamRequest.Lossless)
+            assertEquals("original", match?.second?.matchedId)
+        }
     }
 
     /**

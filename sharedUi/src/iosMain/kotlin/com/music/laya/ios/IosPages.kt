@@ -145,6 +145,7 @@ import com.music.laya.data.model.Song
 import com.music.laya.data.model.UiState
 import com.music.laya.ui.utils.guardSheetFromContentTouches
 import platform.UIKit.UIActivityViewController
+import platform.UIKit.popoverPresentationController
 import platform.UIKit.UIApplication
 
 /** A pushed page: an album / artist / playlist, or a mood / genre's playlists. */
@@ -153,6 +154,8 @@ internal sealed interface IosPage {
     class Mood(val item: MoodGenre, val shelves: UiState<List<HomeShelf>>) : IosPage
     data object Customization : IosPage
     data object Settings : IosPage
+    data class SettingsSection(val category: com.music.laya.ui.screens.SettingsCategory) : IosPage
+    data object HomeLayout : IosPage
     data object Account : IosPage
     data object Spotify : IosPage
     data object Equalizer : IosPage
@@ -239,7 +242,7 @@ internal suspend fun loadSpotifyPage(browseId: String, update: ((DetailPage) -> 
         durationText = durationMs.takeIf { it > 0 }?.let { "${it / 60000}:${(it / 1000 % 60).toString().padStart(2, '0')}" },
         albumName = album,
     )
-    val tracks = runCatching { SpotifyLibrary.tracks(playlistId) { soFar -> setSongs(UiState.Success(soFar.map { it.pending() })) } }
+    val tracks = runCatching { SpotifyLibrary.playableTracks(playlistId) { soFar -> setSongs(UiState.Success(soFar.map { it.pending() })) } }
         .getOrElse { setSongs(UiState.Error(friendly(it))); return@coroutineScope }
     if (tracks.isEmpty()) {
         setSongs(UiState.Error(getString(Res.string.spotify_empty_tracks)))
@@ -289,6 +292,7 @@ internal fun IosSongMenu(
     sleepStatus: String? = null,
     onSleepTimer: (() -> Unit)? = null,
     onCopyLog: (() -> Unit)? = null,
+    onSharePlaybackLog: (() -> Unit)? = null,
     /** Player-only, one at a time like Android: back to YouTube's audio, or the way out of that. Null hides the row. */
     onRevertToOriginal: (() -> Unit)? = null,
     onUpgradeQuality: (() -> Unit)? = null,
@@ -347,6 +351,7 @@ internal fun IosSongMenu(
             onSleepTimer?.let { Action(Icons.Rounded.Bedtime, sleepStatus?.let { s -> "Sleep timer · $s" } ?: "Sleep timer", it) }
             Action(Icons.Rounded.Share, iosText("공유", "Share")) { shareText("https://music.youtube.com/watch?v=${song.videoId}") }
             onCopyLog?.let { Action(Icons.Rounded.BugReport, iosText("로그 복사", "Copy log"), it) }
+            onSharePlaybackLog?.let { Action(Icons.Rounded.BugReport, iosText("곡 재생 로그 공유", "Share playback log"), it) }
         }
     }
 }
@@ -376,13 +381,19 @@ private fun DownloadRow(song: Song) {
 }
 
 /** The system share sheet, presented from whatever view controller is on top. */
-internal fun shareText(text: String) = presentShare(listOf(text))
+internal fun shareText(text: String) { presentShare(listOf(text)) }
 
 /** [shareText] for anything the system can send: strings, file URLs (pictures). */
-internal fun presentShare(items: List<Any>) {
-    var top = UIApplication.sharedApplication.keyWindow?.rootViewController ?: return
+@OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+internal fun presentShare(items: List<Any>, onComplete: (() -> Unit)? = null): Boolean {
+    var top = UIApplication.sharedApplication.keyWindow?.rootViewController ?: return false
     while (true) top = top.presentedViewController ?: break
-    top.presentViewController(UIActivityViewController(items, null), true, null)
+    val share = UIActivityViewController(items, null)
+    share.popoverPresentationController?.sourceView = top.view
+    share.popoverPresentationController?.sourceRect = top.view.bounds
+    if (onComplete != null) share.completionWithItemsHandler = { _, _, _, _ -> onComplete() }
+    top.presentViewController(share, true, null)
+    return true
 }
 
 /** Who is signed in, with the way out, and the Spotify connection. ponytail: no channel switcher (single account). */

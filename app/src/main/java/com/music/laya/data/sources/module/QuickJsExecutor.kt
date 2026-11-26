@@ -103,7 +103,7 @@ internal object QuickJsExecutor {
         synchronized(engineLock) { pools.containsKey(moduleId) }
 
     private val syncHttpClient by lazy {
-        OkHttpClient.Builder()
+        com.music.laya.data.Http.client.newBuilder()
             .connectTimeout(20, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .build()

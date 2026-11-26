@@ -183,6 +183,12 @@ enum class SourceKind(
     /** Whether this is a source the user configured, rather than one that ships. */
     val isUserAdded: Boolean get() = rank == USER_ADDED
 
+    /**
+     * Whether the user sets this source's place in the order: the ones they added, and the built-in lossless
+     * catalogues among them. JioSaavn and YouTube always come last, by [rank].
+     */
+    val isOrderable: Boolean get() = isUserAdded || isLossless
+
     companion object {
         /**
          * The shared rank of every source the user added. Their order among

@@ -834,6 +834,7 @@ object AppSettings {
      */
     fun init(settings: Settings, host: AppSettingsHost) {
         prefs = Prefs(settings)
+        HomeLayoutPreferences.install(settings)
         this.host = host
         readAll()
     }
@@ -855,6 +856,7 @@ object AppSettings {
     }
 
     private fun readAll() {
+        HomeLayoutPreferences.reload()
         migrateSingleQuality()
         audioQualityWifi.value = readQuality(KEY_QUALITY_WIFI)
         audioQualityCellular.value = readQuality(KEY_QUALITY_CELLULAR)

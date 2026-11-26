@@ -79,6 +79,7 @@ kotlin {
         jvmTest.dependencies {
             implementation("com.russhwolf:multiplatform-settings-test:1.3.0")
             implementation("com.squareup.okhttp3:mockwebserver:5.3.2")
+            implementation("com.squareup.okhttp3:okhttp-tls:5.3.2")
             implementation("com.microsoft.onnxruntime:onnxruntime:1.20.0")
         }
     }

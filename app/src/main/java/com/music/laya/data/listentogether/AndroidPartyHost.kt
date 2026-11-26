@@ -35,6 +35,7 @@ fun ListenTogether.init(context: Context) {
             createClient = { config ->
                 HttpClient(OkHttp) {
                     engine {
+                        preconfigured = com.music.laya.data.Http.client
                         config {
                             // Not the shared Http.client: its read timeout would take down a
                             // socket that is merely quiet.

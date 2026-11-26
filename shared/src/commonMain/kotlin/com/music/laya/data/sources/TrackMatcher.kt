@@ -238,6 +238,11 @@ object TrackMatcher {
         if (wanted.versions != effectiveVersions) return null
 
         val creditedArtist = artistScore(target.artist, candidate.artist)
+        // An addon can put the cover label on the release alone. Require a
+        // shared artist for that release before allowing any duration rescue.
+        if (candidate.albumName != null && COVER_ALBUM_LABEL.containsMatchIn(normalize(candidate.albumName)) &&
+            artistNames(target.artist).isNotEmpty() && !sharesArtist(target.artist, candidate.artist)
+        ) return null
         val duration = durationScore(
             target.durationSec,
             secondsOf(candidate.durationText),
@@ -261,16 +266,9 @@ object TrackMatcher {
         // credit hints at the other, so a matcher that insists on an
         // overlap refuses the correct track every time.
         //
-        // What breaks the tie is length. Two recordings that share an
-        // exact title and agree on their runtime to the second are the
-        // same master; a cover, a remix or a re-recording essentially
-        // never lands there — of the four candidates for that track, the
-        // remix ran 241s and the acoustic cover 66s against the 233s being
-        // played. So an exact runtime is allowed to stand in for a shared
-        // credit, and *only* an exact one: with no runtime on either side
-        // there is nothing corroborating anything, and the strict refusal
-        // stands. The match still scores below a genuine credit match, so
-        // it never wins where a properly-credited copy exists.
+        // A close runtime can support that match where the resolver allows
+        // differing credits. This is still weaker than a shared artist:
+        // unlabelled covers and unrelated songs can have the same runtime.
         // A music video's runtime includes visuals and therefore cannot
         // vouch for a catalogue row credited to completely different
         // people. This exact exception is what admitted the 3:30 Lovely
@@ -653,14 +651,15 @@ object TrackMatcher {
      * checked on whole names: "Queen" is inside "Queensrÿche" as text and is
      * not one of its artists, while "Atif Aslam" is genuinely one of
      * "Atif Aslam, Tulsi Kumar". Single letters go — an initialled
-     * "A. R. Rahman" and a plain "AR Rahman" are the same person.
+     * "A. R. Rahman" and a plain "AR Rahman" are the same person. Keep
+     * single non-ASCII letters, which can be a complete credit such as 비.
      */
     internal fun artistNames(value: String): Set<List<String>> = normalize(value)
         .split(ARTIST_SEPARATORS)
         .map { name ->
             name.split(WORD_SPLIT)
                 .map { it.replace(NON_ALNUM, "") }
-                .filter { it.length > 1 }
+                .filter { it.length > 1 || it.any { letter -> letter.code > 127 && letter.isLetter() } }
         }
         .filter { it.isNotEmpty() }
         .toSet()
@@ -819,6 +818,8 @@ object TrackMatcher {
      * `""` — and an empty core matches nothing and asks for nothing.
      */
     private val NON_ALNUM = Regex("""[^\p{L}\p{N}]""")
+    private val COVER_ALBUM_LABEL =
+        Regex("""(?:^|[^\p{L}\p{N}])(?:covers?|karaoke|tribute|커버|카라오케|헌정|翻唱|カバー|カラオケ)(?:$|[^\p{L}\p{N}])""")
     private val LATIN = Regex("[a-z0-9]")
     private const val LATIN_QUERY_CHARS = "abcdefghijklmnopqrstuvwxyz0123456789 "
     private val KANA_ROMAJI: Map<Char, String> = run {

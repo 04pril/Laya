@@ -41,15 +41,20 @@ object LosslessStore {
 
     /**
      * Saves a DASH manifest the provider handed over as text and returns a URL the player can
-     * open it from, or null where the player can't play DASH (iOS) — the stream is passed over.
+     * open it from, or null where the player cannot play DASH directly.
      */
     var manifestFile: (name: String, mpd: String) -> String? = { _, _ -> null }
+
+    /** Optional platform bridge for Tidal DASH audio, returning an already playable URL. */
+    var tidalPlaybackUrl: ((mpd: String) -> String?)? = null
 }
 
 /** The broker wants its one-time browser check (a captcha) before it will answer. */
 class VerificationRequired(val url: String = "") : Exception("Verification required")
 
 class ZarzException(message: String) : Exception(message)
+
+enum class VerificationLoss { Expired, Rejected }
 
 /**
  * A signed session with the `api.zarz.moe` broker the SpotiFLAC / Mornye Tidal and Qobuz
@@ -60,7 +65,12 @@ class ZarzException(message: String) : Exception(message)
  * for a session id and secret. Every call after that is HMAC-signed with a key that rolls every
  * [WINDOW_SECONDS]. The broker scopes a session to [appVersion], so each provider holds its own.
  */
-class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
+class ZarzSession internal constructor(
+    val appVersion: String,
+    private val userAgent: () -> String,
+    private val execute: (HttpRequest) -> HttpResponse,
+) {
+    constructor(appVersion: String, userAgent: () -> String) : this(appVersion, userAgent, NetHttp::execute)
 
     @Serializable
     private data class Record(
@@ -94,6 +104,9 @@ class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
     private val _expired = MutableStateFlow(false)
     /** The last session ran out or was revoked (not [forget]); cleared once verified again or switched by hand. */
     val expired: StateFlow<Boolean> get() = _expired
+    private val _verificationLoss = MutableStateFlow<VerificationLoss?>(null)
+    /** Why the last held session needs verification, until the user switches or verifies again. */
+    val verificationLoss: StateFlow<VerificationLoss?> get() = _verificationLoss
 
     private val _lost = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     /**
@@ -113,9 +126,10 @@ class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
     }
 
     /** Drops [stale] (if still the one held) and reports it lost. */
-    private fun lose(stale: Record) {
+    private fun lose(stale: Record, reason: VerificationLoss = VerificationLoss.Expired) {
         if (record != stale || stale.sessionId.isBlank()) return
         save(stale.cleared())
+        _verificationLoss.value = reason
         _expired.value = true
         _lost.tryEmit(Unit)
     }
@@ -135,11 +149,15 @@ class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
         LosslessStore.write(key, json.encodeToString(Record.serializer(), next))
         _verified.value = next.usable(Clock.System.now())
         _expiresAt.value = next.expiry()?.takeIf { _verified.value }?.toEpochMilliseconds()
-        if (_verified.value) _expired.value = false
+        if (_verified.value) {
+            _verificationLoss.value = null
+            _expired.value = false
+        }
     }
 
     /** Drops the session by hand (the switch): no [lost] report, and no longer [expired]. */
     fun forget() {
+        _verificationLoss.value = null
         _expired.value = false
         save(record.cleared())
     }
@@ -226,14 +244,16 @@ class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
             val error = runCatching { parse(response) }.getOrNull()
             val code = error?.str("code")?.uppercase().orEmpty()
             val origin = error?.str("origin")?.lowercase().orEmpty()
+            val rejected = (origin.isEmpty() || origin == "gateway") &&
+                ((response.code == 401 && code == "SESSION_INVALID") || (response.code == 428 && code == "VERIFY_REQUIRED"))
             when {
                 response.code in 200..299 -> return parse(response)
                 response.code == 503 && origin == "provider" && code == "PROVIDER_UNAVAILABLE" && providerRetries < 2 -> {
                     providerRetries++
                     delay(PROVIDER_RETRY_MS)
                 }
-                (response.code == 401 && code == "SESSION_INVALID") || (response.code == 428 && code == "VERIFY_REQUIRED") -> {
-                    mutex.withLock { lose(current) }
+                rejected -> {
+                    mutex.withLock { lose(current, VerificationLoss.Rejected) }
                     throw VerificationRequired()
                 }
                 else -> throw ZarzException(
@@ -267,7 +287,7 @@ class ZarzSession(val appVersion: String, private val userAgent: () -> String) {
 
     private suspend fun send(method: String, url: String, body: String?, headers: Map<String, String>): HttpResponse =
         withContext(ioDispatcher) {
-            NetHttp.execute(
+            execute(
                 HttpRequest(
                     url = url,
                     method = method,

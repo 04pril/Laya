@@ -107,6 +107,9 @@
                 <action android:name="android.service.quicksettings.action.QS_TILE" />
             </intent-filter>
         </service>
+        <activity android:name=".proxy.AppProxySettingsActivity" android:exported="false" />
+        <activity android:name=".proxy.AppProxyRelaunchActivity" android:exported="false"
+            android:process=":proxy_relaunch" android:excludeFromRecents="true" android:noHistory="true" />
         <activity
             android:name=".recognition.RecognizeActivity"
             android:exported="false"
@@ -578,6 +581,14 @@
                 android:resource="@xml/widget_media_library" />
         </receiver>
 
+        <receiver android:name=".widget.ColorMediaWidgetSquare" android:exported="false" android:label="Laya Color 2×2">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_color_square" />
+        </receiver>
+        <receiver android:name=".widget.ColorMediaWidgetWide" android:exported="false" android:label="Laya Color 4×2">
+            <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE" /></intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_color_wide" />
+        </receiver>
         <!-- The transport buttons. Reached only by this app's own PendingIntents. -->
         <receiver
             android:name=".widget.MediaWidgetActions"

@@ -44,6 +44,10 @@ class AndroidSourcesHost(context: Context) : AndroidSourcesBehaviour() {
     override var jioSaavnOptInDone: Boolean
         get() = prefs.getBoolean("jiosaavn_opt_in_v1", false)
         set(value) = prefs.edit().putBoolean("jiosaavn_opt_in_v1", value).apply()
+
+    override var sourceOrderUnified: Boolean
+        get() = prefs.getBoolean("sources_order_unified_v1", false)
+        set(value) = prefs.edit().putBoolean("sources_order_unified_v1", value).apply()
 }
 
 /** The playback URI for a source-backed track; [PlaybackService] resolves it at open time. */

@@ -2,12 +2,13 @@ package com.music.laya.ui.screens
 
 import com.music.laya.data.sources.LosslessSource
 import com.music.laya.data.sources.lossless.LosslessProvider
+import com.music.laya.data.sources.lossless.VerificationLoss
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.rounded.KeyboardArrowDown
-import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.foundation.layout.Spacer
@@ -31,11 +32,13 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -51,7 +54,10 @@ import com.music.laya.data.sources.SourceRegistry
 import com.music.laya.data.sources.addon.AddonClient
 import com.music.laya.platform.ioDispatcher
 import com.music.laya.sharedui.resources.*
+import com.music.laya.ui.components.DragHandle
 import com.music.laya.ui.components.PillTextField
+import com.music.laya.ui.components.reorderableRow
+import com.music.laya.ui.components.rememberReorderState
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
@@ -59,8 +65,8 @@ import org.jetbrains.compose.resources.stringResource
 /**
  * The Sources page: the addons the user added, in the order they are asked, then YouTube. The
  * shared counterpart of the Sources group on Android's SourcesScreen, minus the remote-library
- * sections and the lossless-output gate, which don't exist off Android yet. Addons reorder with
- * arrows (a drag handle needs the Android-only reorderable list).
+ * sections and the lossless-output gate, which don't exist off Android yet. Addons and the built-in
+ * Qobuz/Tidal reorder together by dragging their grip.
  */
 @Composable
 fun SourcesPage(
@@ -71,8 +77,8 @@ fun SourcesPage(
 ) {
     val tidalVerified by LosslessProvider.Tidal.session.verified.collectAsStateWithLifecycle()
     val qobuzVerified by LosslessProvider.Qobuz.session.verified.collectAsStateWithLifecycle()
-    val tidalExpired by LosslessProvider.Tidal.session.expired.collectAsStateWithLifecycle()
-    val qobuzExpired by LosslessProvider.Qobuz.session.expired.collectAsStateWithLifecycle()
+    val tidalLoss by LosslessProvider.Tidal.session.verificationLoss.collectAsStateWithLifecycle()
+    val qobuzLoss by LosslessProvider.Qobuz.session.verificationLoss.collectAsStateWithLifecycle()
     val tidalUntil by LosslessProvider.Tidal.session.expiresAtMs.collectAsStateWithLifecycle()
     val qobuzUntil by LosslessProvider.Qobuz.session.expiresAtMs.collectAsStateWithLifecycle()
     val configs by SourceRegistry.configs.collectAsStateWithLifecycle()
@@ -100,15 +106,13 @@ fun SourcesPage(
     val ceiling = if (metered == true) cellularQuality else wifiQuality
     val cappedByQuality = ceiling != AudioQuality.LOSSLESS
     val anyLosslessSource = configs.any { it.enabled && it.isComplete && it.kind.canServeLossless }
-    val addons = configs.filter { it.kind.isUserAdded }
-    val ordered = addons + configs.filterNot { it.kind.isUserAdded }.sortedBy { it.kind.rank }
-    fun move(config: SourceConfig, by: Int) {
-        val ids = addons.map { it.id }.toMutableList()
-        val at = ids.indexOf(config.id)
-        if (at + by !in ids.indices) return
-        ids.add(at + by, ids.removeAt(at))
-        SourceRegistry.reorderAddons(ids)
-    }
+    // Addons and the built-in Qobuz/Tidal in the user's order (the stored order is the priority); JioSaavn and
+    // YouTube after them, by kind. Dragged by the grip, committed when the finger lifts.
+    val orderable = configs.filter { it.kind.isOrderable }
+    val fixed = configs.filterNot { it.kind.isOrderable }.sortedBy { it.kind.rank }
+    val byId = configs.associateBy { it.id }
+    val reorder = rememberReorderState(orderable.map { it.id }) { SourceRegistry.reorderAddons(it) }
+    val draggable = orderable.size > 1
 
     Column(
         modifier = modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(contentPadding),
@@ -132,76 +136,91 @@ fun SourcesPage(
         ) {
             val skippedOn = stringResource(if (metered == true) Res.string.mobile_data else Res.string.wifi)
             val ceilingLabel = ceiling.localizedLabel()
-            ordered.forEach { config ->
-                val skipped = config.enabled && !ceiling.permits(config.kind)
-                SettingsRow(
-                    icon = when (config.kind) {
-                        SourceKind.YOUTUBE -> Icons.Rounded.PlayCircle
-                        SourceKind.JIOSAAVN -> Icons.Rounded.GraphicEq
-                        else -> Icons.Rounded.Extension
-                    },
-                    title = config.displayName,
-                    subtitle = if (skipped) {
-                        stringResource(Res.string.source_skipped_by_quality, skippedOn, ceilingLabel)
-                    } else {
-                        config.statusLine(
-                            if (config.kind.isLossless) {
-                                val qobuz = config.kind == SourceKind.QOBUZ
-                                when {
-                                    config.enabled && (if (qobuz) qobuzVerified else tidalVerified) -> SourceHealth.Ok(
-                                        (if (qobuz) qobuzUntil else tidalUntil)
-                                            ?.let { stringResource(Res.string.lossless_verified_until, com.music.laya.platform.localDateTime(it)) }
-                                            ?: stringResource(Res.string.lossless_verified),
-                                    )
-                                    (if (qobuz) qobuzExpired else tidalExpired) ->
-                                        SourceHealth.Rejected(stringResource(Res.string.lossless_verify_expired))
-                                    else -> SourceHealth.Rejected(stringResource(Res.string.lossless_verify_on_enable))
-                                }
-                            } else {
-                                health[config.id]
-                            },
-                        )
-                    },
-                    enabled = config.enabled || config.kind == SourceKind.YOUTUBE,
-                    onClick = when {
-                        config.kind.needsServer -> ({ editing = config })
-                        else -> null
-                    },
-                    trailing = {
-                        if (config.kind == SourceKind.YOUTUBE) {
-                            Text(
-                                stringResource(Res.string.always_on),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else Row {
-                            if (config.kind.isUserAdded && addons.size > 1) {
-                                val at = addons.indexOfFirst { it.id == config.id }
-                                IconButton(onClick = { move(config, -1) }, enabled = at > 0, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Rounded.KeyboardArrowUp, contentDescription = stringResource(Res.string.drag_to_reorder))
-                                }
-                                IconButton(onClick = { move(config, 1) }, enabled = at < addons.lastIndex, modifier = Modifier.size(36.dp)) {
-                                    Icon(Icons.Rounded.KeyboardArrowDown, contentDescription = stringResource(Res.string.drag_to_reorder))
-                                }
-                            }
-                            Switch(
-                                checked = config.enabled,
-                                onCheckedChange = {
-                                    SourceRegistry.setEnabled(config.id, it)
-                                    if (config.kind.isLossless) {
-                                        LosslessSource.toggled(it, LosslessSource.providerFor(config.kind))?.let { p -> onVerify(p, config.id) }
-                                    }
-                                },
-                                colors = SwitchDefaults.colors(
-                                    checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                    checkedBorderColor = MaterialTheme.colorScheme.primary,
-                                ),
+            @Composable
+            fun sourceRow(config: SourceConfig, grip: Boolean) {
+                // The row and its divider move together, on the card's own colour so a lifted row is not see-through.
+                Column(
+                    (if (grip) Modifier.reorderableRow(reorder, config.id) else Modifier)
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (grip) {
+                            DragHandle(
+                                reorder, config.id,
+                                contentDescription = stringResource(Res.string.drag_to_reorder),
+                                modifier = Modifier.padding(start = 8.dp).size(36.dp).padding(6.dp),
                             )
                         }
-                    },
-                )
-                RowDivider()
+                        Box(Modifier.weight(1f)) {
+                            val skipped = config.enabled && !ceiling.permits(config.kind)
+                            SettingsRow(
+                                icon = when (config.kind) {
+                                    SourceKind.YOUTUBE -> Icons.Rounded.PlayCircle
+                                    SourceKind.JIOSAAVN -> Icons.Rounded.GraphicEq
+                                    else -> Icons.Rounded.Extension
+                                },
+                                title = config.displayName,
+                                subtitle = if (skipped) {
+                                    stringResource(Res.string.source_skipped_by_quality, skippedOn, ceilingLabel)
+                                } else {
+                                    config.statusLine(
+                                        if (config.kind.isLossless) {
+                                            val qobuz = config.kind == SourceKind.QOBUZ
+                                            val loss = if (qobuz) qobuzLoss else tidalLoss
+                                            when {
+                                                config.enabled && (if (qobuz) qobuzVerified else tidalVerified) -> SourceHealth.Ok(
+                                                    (if (qobuz) qobuzUntil else tidalUntil)
+                                                        ?.let { stringResource(Res.string.lossless_verified_until, com.music.laya.platform.localDateTime(it)) }
+                                                        ?: stringResource(Res.string.lossless_verified),
+                                                )
+                                                loss != null -> SourceHealth.Rejected(
+                                                    stringResource(if (loss == VerificationLoss.Rejected)
+                                                        Res.string.lossless_verify_rejected else Res.string.lossless_verify_expired),
+                                                )
+                                                else -> SourceHealth.Rejected(stringResource(Res.string.lossless_verify_on_enable))
+                                            }
+                                        } else {
+                                            health[config.id]
+                                        },
+                                    )
+                                },
+                                enabled = config.enabled || config.kind == SourceKind.YOUTUBE,
+                                onClick = when {
+                                    config.kind.needsServer -> ({ editing = config })
+                                    else -> null
+                                },
+                                trailing = {
+                                    if (config.kind == SourceKind.YOUTUBE) {
+                                        Text(
+                                            stringResource(Res.string.always_on),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        )
+                                    } else Row {
+                                        Switch(
+                                            checked = config.enabled,
+                                            onCheckedChange = {
+                                                SourceRegistry.setEnabled(config.id, it)
+                                                if (config.kind.isLossless) {
+                                                    LosslessSource.toggled(it, LosslessSource.providerFor(config.kind))?.let { p -> onVerify(p, config.id) }
+                                                }
+                                            },
+                                            colors = SwitchDefaults.colors(
+                                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                                checkedBorderColor = MaterialTheme.colorScheme.primary,
+                                            ),
+                                        )
+                                    }
+                                },
+                            )
+                        }
+                    }
+                    RowDivider()
+                }
             }
+            // Keyed by id, so a row keeps its gesture while it trades places with others mid-drag.
+            reorder.order.mapNotNull(byId::get).forEach { key(it.id) { sourceRow(it, grip = draggable) } }
+            fixed.forEach { key(it.id) { sourceRow(it, grip = false) } }
             SettingsRow(
                 icon = Icons.Rounded.Add,
                 title = stringResource(Res.string.add_addon),

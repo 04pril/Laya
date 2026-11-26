@@ -825,7 +825,7 @@ fun PullToRefresh(
  * mesh is the card, and white type is what sits on colour.
  */
 @Composable
-fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
+fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier, onProxy: (() -> Unit)? = null, proxyLabel: String = "Proxy settings") {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val scale by animateFloatAsState(if (pressed) 0.98f else 1f, spring(stiffness = 900f), label = "signInScale")
@@ -878,6 +878,9 @@ fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
                     fontWeight = FontWeight.W700,
                     color = Color.Black,
                 )
+            }
+            if (onProxy != null) {
+                androidx.compose.material3.TextButton(onClick = onProxy) { Text(proxyLabel, color = Color.White) }
             }
         }
     }

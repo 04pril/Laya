@@ -8,6 +8,8 @@ import kotlinx.atomicfu.locks.SynchronizedObject
 import kotlinx.atomicfu.locks.synchronized
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withContext
 
 /**
@@ -175,10 +177,20 @@ object CanvasRepository {
         lookUp: suspend () -> CanvasArtwork?,
     ): CanvasArtwork? = lock.withLock {
         lookup(key)?.let { if (it.reusable(withAlbum)) return@withLock it.artwork }
-        val found = withContext(ioDispatcher) { lookUp() }
-        store(key, Entry(found, withAlbum))
-        Log.d(TAG, "lookup settled: ${found?.let { "canvas via ${it.source}" } ?: "no canvas"} (withAlbum=$withAlbum)")
+        val failures = SourceFailures()
+        val found = withContext(ioDispatcher + failures) { lookUp() }
+        // A miss is remembered only when every source really answered "none". One that failed (no network, a Spotify
+        // token that would not refresh, a rate limit) proves nothing: caching that as "no canvas" kept the track bare
+        // for the rest of the session, which is how the same song showed a canvas on one play and not the next.
+        if (found != null || failures.count == 0) store(key, Entry(found, withAlbum))
+        Log.d(TAG, "lookup settled: ${found?.let { "canvas via ${it.source}" } ?: "no canvas"} (withAlbum=$withAlbum, failed sources=${failures.count})")
         found
+    }
+
+    /** Counts the sources of one lookup that threw rather than answered, so [resolve] knows whether a miss is real. */
+    private class SourceFailures : kotlin.coroutines.AbstractCoroutineContextElement(SourceFailures) {
+        companion object Key : kotlin.coroutines.CoroutineContext.Key<SourceFailures>
+        var count = 0
     }
 
     /**
@@ -205,9 +217,15 @@ object CanvasRepository {
     ): CanvasArtwork? {
         for ((index, source) in sources.withIndex()) {
             Log.d(TAG, "trying source #$index")
-            val found = runCatching { source() }
-                .onFailure { Log.d(TAG, "source failed: ${it.message}") }
-                .getOrNull()
+            val found = try {
+                source()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.d(TAG, "source failed: ${e.message}")
+                currentCoroutineContext()[SourceFailures]?.let { it.count++ }
+                null
+            }
             if (found == null) {
                 Log.d(TAG, "source #$index: no canvas")
                 continue

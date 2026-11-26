@@ -953,8 +953,9 @@ object YtMusicRepository {
     /**
      * All playlists in user library (including Liked Music and saved playlists).
      */
-    suspend fun libraryPlaylists(): Result<List<ShelfItem>> = call("libraryPlaylists") {
-        InnertubeParser.parseLibraryItems(Innertube.browse(LIBRARY_PLAYLISTS))
+    suspend fun libraryPlaylists(allPages: Boolean = false): Result<List<ShelfItem>> = call("libraryPlaylists") {
+        if (allPages) libraryItemsPaged(LIBRARY_PLAYLISTS)
+        else InnertubeParser.parseLibraryItems(Innertube.browse(LIBRARY_PLAYLISTS))
     }
 
     /** Creates a playlist, optionally seeded with [videoIds]; returns its id. */

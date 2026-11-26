@@ -82,13 +82,7 @@ internal fun IosCustomizationScreen(bottom: androidx.compose.ui.unit.Dp) {
             }
         }
     }
-    var languagePicker by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(top = 62.dp, bottom = bottom + 24.dp)) {
-        SettingsGroup(header = iosText("앱", "App")) {
-            SettingsRow(title = iosText("앱 언어", "App language"), value = iosText("한국어", "English"), onClick = { languagePicker = true })
-            RowDivider()
-            SettingsRow(title = iosText("WireGuard / 프록시 설정", "WireGuard / proxy settings"), onClick = { IosNative.host?.showProxy() })
-        }
         SettingsGroup(header = iosText("플레이어", "Player")) {
             toggle("함께 듣기 버튼 숨기기", "Hide Listen Together button", "hide_party", Prefs.hideParty)
             RowDivider()
@@ -129,7 +123,6 @@ internal fun IosCustomizationScreen(bottom: androidx.compose.ui.unit.Dp) {
             }
         }
     }
-    if (languagePicker) IosLanguagePicker { languagePicker = false }
 }
 
 private val nativeLabels = mapOf(

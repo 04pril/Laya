@@ -65,6 +65,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     private var nowPlaying: [String: Any] = [:]
     private var artworkTask: URLSessionDataTask?
+    private var canvasTask: Task<Void, Never>?
+    private var nowPlayingTrackId: String?
+    private var canvasSource: URL?
 
     override init() {
         super.init()
@@ -108,10 +111,41 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         deckObservations.append(deck.observe(\.timeControlStatus, options: [.new]) { [weak self] deck, _ in
             DispatchQueue.main.async {
                 guard let self, deck === self.player else { return }
+                self.logTiming(deck)
                 self.reportProgress()
                 self.updateNowPlayingTiming()
             }
         })
+    }
+
+    // MARK: - Timing log
+
+    /// When play() was asked, until the first sound: how long a start took, for "Copy log".
+    private var startAskedAt: CFTimeInterval?
+    /// When the playing deck ran dry mid-track, until it plays again.
+    private var stalledAt: CFTimeInterval?
+
+    /// One line per start and per stall, from the playing deck's state changes (never per tick).
+    private func logTiming(_ deck: AVQueuePlayer) {
+        let now = CACurrentMediaTime()
+        switch deck.timeControlStatus {
+        case .playing:
+            if let asked = startAskedAt {
+                startAskedAt = nil
+                nativeLog(String(format: "AudioEngine: first sound %.0f ms after play", (now - asked) * 1000))
+            } else if let since = stalledAt {
+                stalledAt = nil
+                nativeLog(String(format: "AudioEngine: playing again after a %.1f s stall", now - since), warn: true)
+            }
+        case .waitingToPlayAtSpecifiedRate:
+            // Ran out of audio mid-track; a start still waiting for its first sound is covered by the line above.
+            guard startAskedAt == nil, stalledAt == nil, seekingToMs == nil, deck.reasonForWaitingToPlay == .toMinimizeStalls else { return }
+            stalledAt = now
+            let at = deck.currentTime().seconds
+            nativeLog("AudioEngine: stalled at \(at.isFinite ? String(format: "%.1f", at) : "?")s, waiting for data", warn: true)
+        default:
+            stalledAt = nil // paused: a stall that ends in a pause is not timed
+        }
     }
 
     // MARK: - AudioEngine
@@ -142,6 +176,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         activateSession()
         becomeCurrent(item)
         player.insert(item, after: nil)
+        startAskedAt = CACurrentMediaTime()
+        stalledAt = nil
         go()
     }
 
@@ -205,6 +241,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         cancelSwap()
         pausedByInterruption = false
         resumeAfterSeek = false
+        startAskedAt = nil // a start paused before it sounded is not timed
         player.pause()
         if fade != nil { idle.pause() }
         reportProgress()
@@ -239,11 +276,15 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         lastWatchedPosition = -1 // a seek back is not the tail replaying
         IosDsp.shared.reset()
         reportProgress()
-        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self, weak item] finished in
             guard let self else { return }
             if self.seekingToMs == positionMs { self.seekingToMs = nil }
             if self.resumeAfterSeek { self.resumeAfterSeek = false; self.go() }
-            print("AudioEngine: seek landed requested=\(Double(positionMs) / 1000)s currentTime=\(self.player.currentTime().seconds)s")
+            nativeLog("AudioEngine: seek landed requested=\(Double(positionMs) / 1000)s currentTime=\(self.player.currentTime().seconds)s")
+            if LayaAppIdentity.scheme == "layatest", let item, item === self.currentItem {
+                self.listener?.onPlaybackDiagnostic(message:
+                    "seek completed=\(finished) requestedMs=\(positionMs) actualSeconds=\(item.currentTime().seconds)")
+            }
             self.reportProgress()
             self.updateNowPlayingTiming()
         }
@@ -271,11 +312,18 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         reopening = nil
         resumeAfterSeek = false
         pausedByInterruption = false
+        failedItems.removeAll()
+        startAskedAt = nil
+        stalledAt = nil
     }
 
     func dismissNowPlaying() {
         artworkTask?.cancel()
         artworkTask = nil
+        canvasTask?.cancel()
+        canvasTask = nil
+        canvasSource = nil
+        nowPlayingTrackId = nil
         nowPlaying.removeAll()
         nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nil
         nowPlayingSession.nowPlayingInfoCenter.playbackState = .stopped
@@ -329,8 +377,17 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if EqualizerTuning.wanted { [currentItem, nextItem].forEach { $0.map(EqualizerTap.attach) } }
     }
 
-    func setNowPlaying(title: String, artist: String, album: String?, artworkUrl: String?) {
+    func setNowPlaying(trackId: String, title: String, artist: String, album: String?, artworkUrl: String?) {
         artworkTask?.cancel()
+        let sameTrack = nowPlayingTrackId == trackId
+        let canvasKey: String?
+        if #available(iOS 26.0, *) { canvasKey = NowPlayingCanvas.key } else { canvasKey = nil }
+        let animated = sameTrack ? canvasKey.flatMap { nowPlaying[$0] } : nil
+        if !sameTrack {
+            canvasTask?.cancel()
+            canvasSource = nil
+        }
+        nowPlayingTrackId = trackId
         nowPlaying = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist,
@@ -338,6 +395,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0,
             MPNowPlayingInfoPropertyPlaybackRate: 0.0,
         ]
+        if let canvasKey, let animated { nowPlaying[canvasKey] = animated }
         if let album { nowPlaying[MPMediaItemPropertyAlbumTitle] = album }
         // Fill in duration/position/rate from the player right away: after an
         // automatic advance the new item is already ready, so no status change
@@ -355,6 +413,38 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             return
         }
         fetchArtwork(artworkUrl, letterboxed: false, expectedTitle: expectedTitle)
+    }
+
+    func supportsNowPlayingCanvas() -> Bool {
+        if #available(iOS 26.0, *) { return NowPlayingCanvas.key != nil }
+        return false
+    }
+
+    func setNowPlayingCanvas(trackId: String, clipUrl: String?) {
+        guard #available(iOS 26.0, *), let key = NowPlayingCanvas.key else { return }
+        onMain { [weak self] in
+            guard let self, trackId == self.nowPlayingTrackId else { return }
+            let remote = clipUrl.flatMap { URL(string: $0) }
+            guard remote != self.canvasSource else { return }
+            self.canvasTask?.cancel()
+            self.canvasSource = remote
+            self.nowPlaying.removeValue(forKey: key)
+            self.publishNowPlayingInfo()
+            guard let remote else { return }
+            self.canvasTask = Task { @MainActor [weak self] in
+                do {
+                    let cover = try await NowPlayingCanvas.artwork(from: remote, key: key)
+                    guard !Task.isCancelled, let self,
+                          self.nowPlayingTrackId == trackId, self.canvasSource == remote else { return }
+                    self.nowPlaying[key] = cover
+                    self.publishNowPlayingInfo()
+                } catch {
+                    if !Task.isCancelled, let self, self.canvasSource == remote, self.nowPlayingTrackId == trackId {
+                        self.canvasSource = nil
+                    }
+                }
+            }
+        }
     }
 
     /// The lock screen's cover, square as the app's own: a music video's 16:9 frame (hq720) is cut to its middle square.
@@ -434,6 +524,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 String(Int(session.ioBufferDuration * 1000))]
     }
 
+    func playbackDiagnostics(streamUrl: String?) -> [String] {
+        let state = YTMUWGStateDescription(YTMUWGCurrentState())
+        let kind = YTMUWGActiveKind()
+        let proxy = "app proxy: enabled=\(YTMUWGSettingEnabled()) mode=\(kind.isEmpty ? "none" : kind) state=\(state)"
+        guard let streamUrl, let url = URL(string: streamUrl) else { return [proxy] }
+        return [proxy] + TidalHlsServer.shared.diagnostics(for: url)
+    }
+
     /// The app's own level ("In-app volume"): each deck's volume is this times its own swap fade. Crossfades run in the taps.
     private var appGain: Float = 1
 
@@ -463,6 +561,12 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func makeItem(url: String, headers: [String: String], mimeType: String,
                           contentLength: Int64, chunkBytes: Int64) -> AVPlayerItem? {
         guard let source = URL(string: url) else { return nil }
+        if TidalHlsServer.shared.owns(source) {
+            let item = AVPlayerItem(url: source)
+            item.preferredForwardBufferDuration = 30
+            prepare(item)
+            return item
+        }
         // A downloaded or imported file: AVFoundation reads it directly.
         if source.isFileURL {
             let flac = (try? FileHandle(forReadingFrom: source))
@@ -505,7 +609,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         new.preferredForwardBufferDuration = item.preferredForwardBufferDuration
         prepare(new)
         adopt(fresh, for: new)
-        print("AudioEngine: reopening the FLAC with precise timing at \(Double(ms) / 1000)s")
+        nativeLog("AudioEngine: reopening the FLAC with precise timing at \(Double(ms) / 1000)s")
         reopening = new
         resumeAfterSeek = player.timeControlStatus != .paused
         player.pause() // nothing plays from 0 before the seek below lands
@@ -530,20 +634,40 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// The playing item can't go on. AVQueuePlayer would quietly move to the queued next track
     /// (a skip nobody asked for), so the queue is held here and Kotlin decides: retry, or move on.
     /// A queued item's failure is left for when it becomes current.
-    private func fail(_ item: AVPlayerItem, message: String, httpStatus: Int32) {
+    private func fail(_ item: AVPlayerItem, message: String, httpStatus: Int32, reportedError: Error? = nil) {
         guard item === currentItem else { return }
         // AVFoundation reads some fragmented MP4s as twice their length (see ChunkedResourceLoader.durationHint), so
         // the real end arrives as a failure. That is the track ending, not breaking: move on rather than retry it.
         if atStatedEnd(item) { return endByHint(item) }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
-        let ns = item.error as NSError?
-        let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
-        let loader = loaders[ObjectIdentifier(item)]
-        print("AudioEngine: item failed (free \(os_proc_available_memory() / 1_048_576) MB): \(message) [\(ns?.domain ?? "-") \(ns?.code ?? 0) / \(under?.domain ?? "-") \(under?.code ?? 0)] length=\(loader?.knownLength.map(String.init) ?? "?") mime=\(loader?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")")
+        let detail = failureDetail(item, reportedError: reportedError)
+        if LayaAppIdentity.scheme == "layatest" {
+            let ns = item.error as NSError?
+            let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
+            listener?.onPlaybackDiagnostic(message:
+                "native playback error code=\(ns?.code ?? 0) underlyingCode=\(under?.code ?? 0) httpStatus=\(httpStatus)")
+        }
+        nativeLog("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain)" } ?? "-")", warn: true)
         cancelFade()
         clearNextOnMain()
         player.pause()
-        listener?.onError(message: message, httpStatus: httpStatus)
+        // The detail rides along in the message: it reaches the shared TrackLog (and so a user's exported log), where
+        // a bare "The operation couldn't be completed. (0)" said nothing about what broke. Only ever logged.
+        listener?.onError(message: "\(message) \(detail)", httpStatus: httpStatus)
+    }
+
+    /// The error codes under AVFoundation's generic message, what the loader saw on the wire, and memory left.
+    private func failureDetail(_ item: AVPlayerItem, reportedError: Error? = nil) -> String {
+        // Free-form system errors and AVPlayer error comments may include a signed stream URL.
+        let ns = (item.error ?? reportedError) as NSError?
+        let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
+        let loader = loaders[ObjectIdentifier(item)]
+        let at = item.currentTime().seconds
+        return "[\(ns?.domain ?? "-") \(ns?.code ?? 0) / \(under?.domain ?? "-") \(under?.code ?? 0)]"
+            + " at=\(at.isFinite ? String(format: "%.1f", at) : "?")s"
+            + " length=\(loader?.knownLength.map(String.init) ?? "?")"
+            + (loader.map { " \($0.diagnostics)" } ?? "")
+            + " free=\(os_proc_available_memory() / 1_048_576)MB"
     }
 
     private func hasFailed(_ item: AVPlayerItem) -> Bool {
@@ -579,7 +703,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let replaying = delivered && lastWatchedPosition >= duration - 10 && position < lastWatchedPosition - 0.5
         lastWatchedPosition = position
         if replaying {
-            print("AudioEngine: tail replaying (back to \(position)s of \(duration)s); ending the track")
+            nativeLog("AudioEngine: tail replaying (back to \(position)s of \(duration)s); ending the track")
             stuckAt = -1
             return endByHint(item)
         }
@@ -590,7 +714,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let atEnd = delivered && position >= duration - 2
         guard overrun || atEnd else { stuckAt = -1; return }
         if overrun || (abs(position - stuckAt) <= 0.05 && CACurrentMediaTime() - stuckSince > 1.5) {
-            print("AudioEngine: \(overrun ? "past" : "stuck at") the end (\(position)s of \(duration)s, \(player.timeControlStatus.rawValue)); ending the track")
+            nativeLog("AudioEngine: \(overrun ? "past" : "stuck at") the end (\(position)s of \(duration)s, \(player.timeControlStatus.rawValue)); ending the track")
             stuckAt = -1
             return endByHint(item)
         }
@@ -608,7 +732,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// [item] has played the whole of its stated length: on to the queued track as a natural end would.
     private func endByHint(_ item: AVPlayerItem) {
         guard item === currentItem, fade == nil else { return }
-        print("AudioEngine: track over at \(item.currentTime().seconds)s (parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
+        nativeLog("AudioEngine: track over at \(item.currentTime().seconds)s (parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
         materializeNextIfDue(force: true)
         if parked { return handOverNow() }
         if let next = nextItem, player.items().contains(next) { return player.advanceToNextItem() }
@@ -619,6 +743,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     private func prepare(_ item: AVPlayerItem) {
+        // A new item may sit at the address of one that failed and was freed: it has not failed itself.
+        failedItems.remove(ObjectIdentifier(item))
         item.audioTimePitchAlgorithm = .spectral
         if EqualizerTuning.wanted { EqualizerTap.attach(to: item) }
     }
@@ -644,7 +770,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.updateNowPlayingTiming()
                     self.reportAudioFormat(item)
                 case .failed:
-                    self.fail(item, message: item.error?.localizedDescription ?? "Playback failed", httpStatus: 0)
+                    self.fail(item, message: "Playback failed", httpStatus: 0)
                 default:
                     break
                 }
@@ -687,7 +813,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func currentItemChanged(from old: AVPlayerItem?) {
         let now = player.currentItem
         if old !== now {
-            print("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) err=\(old?.error?.localizedDescription ?? "-"), next=\(now === nextItem), parked=\(parked))")
+            let error = old?.error as NSError?
+            nativeLog("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) error=\(error?.domain ?? "-") \(error?.code ?? 0), next=\(now === nextItem), parked=\(parked))")
         }
         if let fresh = reopening, now === fresh {
             // The same track reopened precisely (reopenPrecise), not the next one.
@@ -702,9 +829,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             cancelFade()
             if let now, now === nextItem { player.remove(now); dropItem(now); nextItem = nil } else { clearNextOnMain() }
             player.pause()
+            let detail = failureDetail(old) // before dropItem takes the loader's record with it
             dropItem(old)
             if failedItems.insert(ObjectIdentifier(old)).inserted {
-                listener?.onError(message: old.error?.localizedDescription ?? "Playback stopped", httpStatus: 0)
+                listener?.onError(message: "Playback stopped \(detail)", httpStatus: 0)
             }
             return
         }
@@ -777,7 +905,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         cancelSwap()
         guard fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .readyToPlay,
               let item = makeItem(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
-        else { return print("AudioEngine: source swap skipped") }
+        else { return nativeLog("AudioEngine: source swap skipped") }
         clearNextOnMain() // Kotlin queues it again once the swap is in
         swapItem = item
         swapGen += 1
@@ -794,7 +922,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.swapObservation = nil
                     self.swapAlign(item, deck, gen, attempt: 0)
                 } else if item.status == .failed {
-                    print("AudioEngine: source swap failed to load; staying on the playing copy")
+                    nativeLog("AudioEngine: source swap failed to load; staying on the playing copy", warn: true)
                     self.cancelSwap()
                 }
             }
@@ -809,7 +937,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // A FLAC cue is far more data than an Opus one; the lead grows each time the copy can't get there in time.
         let target = player.currentTime().seconds + (running ? (1.5 + 1.5 * Double(attempt)) * Double(rate) : 0)
         func retry() {
-            if attempt >= 3 { print("AudioEngine: source swap could not line up; staying on the playing copy"); return cancelSwap() }
+            if attempt >= 3 { nativeLog("AudioEngine: source swap could not line up; staying on the playing copy", warn: true); return cancelSwap() }
             swapAlign(item, deck, gen, attempt: attempt + 1)
         }
         deck.seek(to: CMTime(seconds: target, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] done in
@@ -871,7 +999,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         materializeNextIfDue()
         reportProgress()
         updateNowPlayingTiming()
-        print("AudioEngine: source swapped at \(player.currentTime().seconds)s")
+        nativeLog("AudioEngine: source swapped at \(player.currentTime().seconds)s")
     }
 
     private func cancelSwap(resume: Bool = true) {
@@ -1013,7 +1141,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         guard position >= start else { return }
         if position - start > 1 { // arrived late (a seek into the window): no fade for this pair
             fadeSkipped = true
-            print("Crossfade: window missed (at \(position)s, due \(start)s); gapless")
+            nativeLog("Crossfade: window missed (at \(position)s, due \(start)s); gapless")
             return abandonRamp()
         }
         guard item.status == .readyToPlay else { return } // still loading; the window allows a second of grace
@@ -1046,7 +1174,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if transition.outRate != 1 { player.rate = outSpeed }
         rampedSpeed = nil
         fade = Fade(out: player, inn: deck, item: item, oldItem: current, start: position, length: length, inSpeed: inSpeed)
-        print("Crossfade: begin out=\(position)s len=\(length)s cue=\(transition.cueMs)ms rate=\(transition.rate)/\(transition.outRate)")
+        nativeLog("Crossfade: begin out=\(position)s len=\(length)s cue=\(transition.cueMs)ms rate=\(transition.rate)/\(transition.outRate)")
     }
 
     private func driveFade(_ f: Fade) {
@@ -1093,7 +1221,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         placeNext()
         reportProgress()
         updateNowPlayingTiming()
-        print("Crossfade: done")
+        nativeLog("Crossfade: done")
     }
 
     /// Nothing faded: the parked track starts now, the old one having run out.
@@ -1218,8 +1346,16 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         ) { [weak self] note in
             guard let self, let item = note.object as? AVPlayerItem else { return }
             let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            self.fail(item, message: error?.localizedDescription ?? "Playback stopped", httpStatus: 0)
+            self.fail(item, message: "Playback stopped", httpStatus: 0, reportedError: error)
         })
+        if LayaAppIdentity.scheme == "layatest" {
+            notificationTokens.append(center.addObserver(
+                forName: .AVPlayerItemPlaybackStalled, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let self, let item = note.object as? AVPlayerItem, item === self.currentItem else { return }
+                self.listener?.onPlaybackDiagnostic(message: "AVPlayer stalled positionSeconds=\(item.currentTime().seconds)")
+            })
+        }
     }
 
     private func handleInterruption(_ note: Notification) {

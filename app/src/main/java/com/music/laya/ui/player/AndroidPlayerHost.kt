@@ -10,10 +10,15 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
+import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.painterResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.music.laya.R
 import com.music.laya.data.canvas.CanvasArtwork
 import com.music.laya.data.canvas.CanvasRepository
 import com.music.laya.data.listentogether.ListenTogether
@@ -34,6 +39,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.util.Locale
@@ -93,6 +99,29 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
 
     @Composable
     override fun CanvasVideo(spec: CanvasVideoSpec, modifier: Modifier) = AndroidCanvasVideo(spec, modifier)
+
+    @Composable
+    override fun QueueSelectionActions(queue: List<Song>, currentIndex: Int, locked: Boolean) = AndroidQueueSelection(queue, currentIndex, locked)
+
+    override val hasNativeOutputGlyph get() = true
+
+    private val outputGlyph = combine(AudioOutputStatus.current, CastController.state, WearBridge.watchOutput) { output, cast, watch ->
+        if (cast.casting || watch.active) R.drawable.ic_player_output_headphones else outputGlyphFor(output.deviceName)
+    }.distinctUntilChanged()
+
+    @Composable
+    override fun OutputGlyph(modifier: Modifier) {
+        val glyph by outputGlyph.collectAsStateWithLifecycle(
+            initialValue = outputGlyphFor(AudioOutputStatus.current.value.deviceName),
+        )
+        Icon(painterResource(glyph), contentDescription = null, modifier = modifier, tint = Color.White)
+    }
+
+    override val supportsExpandedPlayerLayout: Boolean get() = true
+    override val portraitBottomPadding get() = 4.dp
+    override val outputCaptionGap get() = 0.dp
+    override val prominentOutputCaption get() = true
+    override val outputCaptionAlignment get() = androidx.compose.ui.Alignment.Center
 
     override val musicVideoSupported: Boolean get() = true
 
@@ -229,6 +258,20 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
         request: LyricsShareRequest,
         onDismiss: () -> Unit,
     ) = AndroidLyricsShareSheet(hazeState = hazeState, request = request, onDismiss = onDismiss)
+}
+
+private val airPodsGeneration = Regex("(?:airpods|에어팟)[\\s(]*(?:gen(?:eration)?[\\s-]*)?([34])(?![0-9])")
+
+private fun outputGlyphFor(deviceName: String): Int {
+    val name = deviceName.lowercase(Locale.ROOT)
+    if ("airpods" !in name && "에어팟" !in name) return R.drawable.ic_player_output_headphones
+    if ("max" in name || "맥스" in name) return R.drawable.ic_player_output_airpods_max
+    if ("pro" in name || "프로" in name) return R.drawable.ic_player_output_airpods_pro
+    return when (airPodsGeneration.find(name)?.groupValues?.get(1)) {
+        "4" -> R.drawable.ic_player_output_airpods_4
+        "3" -> R.drawable.ic_player_output_airpods_3
+        else -> R.drawable.ic_player_output_airpods
+    }
 }
 
 private fun AudioOutputStatus.Snapshot.toOutputFormat(): OutputFormatUi {

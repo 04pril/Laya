@@ -9,7 +9,6 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
@@ -22,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -114,17 +114,22 @@ fun MeshGradientBackground(
 ) {
     val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
 
-    val tuned = (palette.colors.ifEmpty { FallbackColors } + FallbackColors)
-        .take(4)
-        .map { it.tuned() }
+    val tuned = remember(palette) {
+        (palette.colors.ifEmpty { FallbackColors } + FallbackColors).take(4).map { it.tuned() }
+    }
 
     // Each colour slot crossfades independently when the track (palette) changes,
     // unless "reduce animation" is on, in which case colours snap straight to target.
     val colorSpec: AnimationSpec<Color> = if (reduceAnimation || !animated) snap() else tween(colorFadeMillis)
     val animatedColors = tuned.mapIndexed { index, color ->
-        animateColorAsState(color, colorSpec, label = "meshColor$index").value
+        animateColorAsState(color, colorSpec, label = "meshColor$index")
     }
     val baseColor by animateColorAsState(tuned.first().dimmed(), colorSpec, label = "meshBase")
+    val anchors = remember {
+        listOf(Offset(0.20f, 0.25f), Offset(0.80f, 0.20f), Offset(0.75f, 0.80f), Offset(0.25f, 0.75f))
+    }
+    val speeds = remember { floatArrayOf(1f, -0.7f, 0.85f, -1.15f) }
+    val scrim = remember { Brush.verticalGradient(listOf(Color.Black.copy(alpha = 0.10f), Color.Black.copy(alpha = 0.38f))) }
 
     // Read in the draw lambda, not here: an Animatable read during draw
     // invalidates only the drawing, leaving composition out of the loop.
@@ -171,25 +176,19 @@ fun MeshGradientBackground(
                 scaleX = 1.3f
                 scaleY = 1.3f
             }
-            .background(baseColor)
+            .drawBehind { drawRect(baseColor) }
             .blur(blurRadius),
     ) {
-        val anchors = listOf(
-            Offset(0.20f, 0.25f),
-            Offset(0.80f, 0.20f),
-            Offset(0.75f, 0.80f),
-            Offset(0.25f, 0.75f),
-        )
-        val speeds = listOf(1f, -0.7f, 0.85f, -1.15f)
         val drift = phase.value
+        val radius = size.maxDimension * 0.62f
 
-        animatedColors.forEachIndexed { index, color ->
+        animatedColors.forEachIndexed { index, animatedColor ->
+            val color = animatedColor.value
             val anchor = anchors[index]
             val center = Offset(
                 x = (anchor.x + 0.16f * cos(drift * speeds[index] + index * 1.7f)) * size.width,
                 y = (anchor.y + 0.16f * sin(drift * speeds[index] * 0.9f + index * 2.3f)) * size.height,
             )
-            val radius = size.maxDimension * 0.62f
             drawCircle(
                 brush = Brush.radialGradient(
                     colors = listOf(color.copy(alpha = 0.85f), color.copy(alpha = 0f)),
@@ -202,14 +201,7 @@ fun MeshGradientBackground(
         }
 
         // Gentle scrim so white text stays legible over bright art.
-        drawRect(
-            brush = Brush.verticalGradient(
-                colors = listOf(
-                    Color.Black.copy(alpha = 0.10f),
-                    Color.Black.copy(alpha = 0.38f),
-                ),
-            ),
-        )
+        drawRect(scrim)
     }
 }
 
