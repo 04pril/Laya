@@ -44,9 +44,10 @@ internal actual object StreamPlatform {
         select: (List<Pair<Int, NewPipeAudio>>) -> NewPipeAudio?,
     ): StreamResolver.Stream = error("NewPipe is not available on iOS")
 
-    // ponytail: NetHttp reads the whole ranged body (<= 1 MiB on googlevideo) instead of stopping at readBytes.
+    // Asks for the full range the player will (so a refusal of large ranges still shows), but reads only [readBytes]
+    // of it, as OkHttp does on Android: the rest of the ~1 MiB used to download, and be thrown away, before every start.
     actual fun <T> probeFetch(url: String, headers: Map<String, String>, readBytes: Long, onReply: (Int, String?, () -> Boolean) -> T): T {
-        val r = NetHttp.execute(HttpRequest(url, headers = headers, callTimeoutMs = 6_000L))
-        return onReply(r.code, r.header("Content-Type")) { r.body.size >= readBytes }
+        val (code, contentType, arrived) = NetHttp.probe(url, headers, readBytes, timeoutMs = 6_000L)
+        return onReply(code, contentType) { arrived }
     }
 }
