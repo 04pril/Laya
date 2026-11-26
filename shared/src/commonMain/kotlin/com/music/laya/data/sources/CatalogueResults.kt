@@ -1,6 +1,7 @@
 package com.music.laya.data.sources
 
 import com.music.laya.data.canvas.normalizeForMatch
+import com.music.laya.data.canvas.splitArtists
 import com.music.laya.data.model.Song
 import kotlin.math.abs
 
@@ -16,14 +17,11 @@ object CatalogueResults {
     /** [perSource] in the user's source order, each list in that source's own ranking. */
     fun merge(perSource: List<List<Song>>): List<Song> {
         // Representatives chosen in source order: the best-ranked source's row for each recording.
-        val byKey = HashMap<String, MutableList<Song>>()
-        val kept = HashSet<String>() // videoIds of the representatives
+        val representatives = ArrayList<Song>()
         perSource.forEach { rows ->
-            rows.forEach { song ->
-                val group = byKey.getOrPut(keyOf(song)) { mutableListOf() }
-                if (group.none { sameLength(it, song) }) { group += song; kept += song.videoId }
-            }
+            rows.forEach { song -> if (representatives.none { sameRecording(it, song) }) representatives += song }
         }
+        val kept = representatives.mapTo(HashSet()) { it.videoId }
         // Round-robin, so no single catalogue buries the others.
         val shown = HashSet<String>()
         return buildList {
@@ -36,9 +34,30 @@ object CatalogueResults {
         }
     }
 
-    /** Same title, artist and explicitness. A clean and an explicit cut stay apart; length is compared after. */
-    internal fun keyOf(song: Song): String =
-        listOf(song.title.normalizeForMatch(), song.artist.normalizeForMatch(), song.isExplicit.toString()).joinToString("|")
+    /**
+     * One recording listed by two catalogues. Soundtracks and classical are credited differently from one to the
+     * next: Qobuz's "Across the Stars (…) (From "Star Wars…"/Score)" by John Williams is Tidal's "Across the Stars (…)"
+     * by John Williams, London Symphony Orchestra. So: the title without a source note ("(From …)", "(… Score)",
+     * soundtrack/OST tags), one side's artists all among the other's, explicitness not contradicting, and lengths
+     * within five seconds. A different cut ("(Inst.)", "(Remix)", a live take) keeps its own row.
+     */
+    internal fun sameRecording(a: Song, b: Song): Boolean {
+        if (a.isExplicit != null && b.isExplicit != null && a.isExplicit != b.isExplicit) return false
+        if (!sameLength(a, b)) return false
+        if (titleOf(a.title) != titleOf(b.title)) return false
+        val x = splitArtists(a.artist).toSet()
+        val y = splitArtists(b.artist).toSet()
+        if (x.isEmpty() || y.isEmpty()) return x == y
+        return x.containsAll(y) || y.containsAll(x)
+    }
+
+    internal fun titleOf(title: String): String = title.replace(SOURCE_NOTE, " ").normalizeForMatch()
+
+    /** "(From "…")", "[From …]", "(… Score)", "(Original Motion Picture Soundtrack)", "(OST)": where it is from, not what. */
+    private val SOURCE_NOTE = Regex(
+        """\s*[(\[]\s*(?:taken\s+)?from\b[^)\]]*[)\]]|\s*[(\[][^)\]]*\b(?:score|soundtrack|ost)\b[^)\]]*[)\]]""",
+        RegexOption.IGNORE_CASE,
+    )
 
     /** Within five seconds when both state a length (3:01 on Qobuz is 3:02 on Tidal); a single and its long mix differ. */
     internal fun sameLength(a: Song, b: Song): Boolean {

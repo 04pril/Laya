@@ -33,6 +33,7 @@ import com.music.laya.playback.smart.TransitionTrackInfo
 import com.music.laya.playback.smart.planTransition
 import com.music.laya.data.sources.SourceKind
 import com.music.laya.data.sources.SourceRegistry
+import com.music.laya.data.sources.PlaybackFailures
 import com.music.laya.data.sources.SourceResolver
 import com.music.laya.data.sources.SourceStream
 import com.music.laya.data.sources.StreamFormat
@@ -743,6 +744,17 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (IosOriginalVersion.isPinned(song.videoId)) youtubeSeedFor(song)?.let { return youtube(it) }
         val target = TrackMatcher.targetOf(song)
         SourceRegistry.parseTrackKey(song.videoId)?.let { (configId, trackId) ->
+            // Its source failed this track lately (PlaybackFailures): the next source that has it, else YouTube, at
+            // once, rather than another ten seconds on a file that does not download.
+            if (configId in PlaybackFailures.ruledOut(target)) {
+                val other = withTimeoutOrNull(OTHER_SOURCE_TIMEOUT_MS) {
+                    runCatching { SourceResolver.otherSourceFor(target, setOf(configId)) }.getOrNull()
+                }
+                TrackLog.d("Laya", "${SourceRegistry.config(configId)?.displayName ?: "source"} failed this track lately; " +
+                    (other?.let { "playing it from ${it.first.displayName}" } ?: "playing YouTube's copy"), about = song.videoId)
+                if (other != null) return fromSource(other.second)
+                youtubeSeedFor(song)?.let { return youtube(it) }
+            }
             // Addon rows play as the row the listener picked, never its Atmos sibling or YouTube's copy (MIX_PARAM).
             val mix = if (SourceRegistry.config(configId)?.kind == SourceKind.ADDON) {
                 when (song.sourceQuality) {
@@ -1296,7 +1308,10 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         // download went straight to YouTube even with the track on Tidal, and to silence when YouTube had none.
         if (!offSite.remove(failed.videoId)) return recover(failed, "$message ($httpStatus)", httpStatus)
         val via = NerdStats.exactSourceFor(failed.videoId) ?: "source"
-        playingOpened?.takeIf { it.first == failed.videoId }?.second?.configId?.let(failedSources::add)
+        playingOpened?.takeIf { it.first == failed.videoId }?.second?.configId?.let { config ->
+            failedSources.add(config)
+            PlaybackFailures.record(config, TrackMatcher.targetOf(failed)) // and skipped for this track for a day
+        }
         val excluded = failedSources.toSet()
         val failedEntry = failed.queueEntryId
         NerdStats.clearDeclared(failed.videoId)

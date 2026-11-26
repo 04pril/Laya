@@ -35,4 +35,18 @@ class CatalogueResultsTest {
         val b = listOf(song("b1", "좋은 날", "아이유", "3:53"), song("b2", "밤편지", "아이유", "4:14"))
         assertEquals(listOf("a1", "b1"), CatalogueResults.merge(listOf(a, b)).map { it.videoId })
     }
+
+    @Test
+    fun `a soundtrack credited differently by each catalogue is one recording`() {
+        val qobuz = listOf(song("q", "Across the Stars (Love Theme from \"Star Wars: Attack of the Clones\") (From \"Star Wars: Attack of the Clones\"/Score)", "John Williams", "5:31"))
+        val tidal = listOf(song("t", "Across the Stars (Love Theme from \"Star Wars: Attack of the Clones\")", "John Williams, London Symphony Orchestra", "5:32"))
+        assertEquals(listOf("q"), CatalogueResults.merge(listOf(qobuz, tidal)).map { it.videoId })
+    }
+
+    @Test
+    fun `an instrumental or a remix keeps its own row`() {
+        val a = listOf(song("a", "연애소설 (Love Soseol)", "tripleS", "2:59"))
+        val b = listOf(song("b", "연애소설 (Love Soseol) (Inst.)", "tripleS", "2:58"), song("c", "Love Attack (Moods Remix)", "Fhin", "2:54"))
+        assertEquals(listOf("a", "b", "c"), CatalogueResults.merge(listOf(a, b)).map { it.videoId })
+    }
 }
