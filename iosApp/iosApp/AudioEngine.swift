@@ -38,6 +38,18 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     /// Loader per queued item; an item's loader must live as long as the item.
     private var loaders: [ObjectIdentifier: ChunkedResourceLoader] = [:]
+    /// The same asset can move between decks and get a new AVPlayerItem. Keep its file timing with the asset.
+    private let fileDurations = NSMapTable<AVAsset, FileDuration>(keyOptions: [.weakMemory, .objectPointerPersonality],
+                                                                valueOptions: .strongMemory)
+    private final class FileDuration: NSObject {
+        let seconds: Double
+        let estimated: Bool
+
+        init(seconds: Double, estimated: Bool) {
+            self.seconds = seconds
+            self.estimated = estimated
+        }
+    }
     private var speed: Float = 1
     /// Racing through a silent stretch (see EqualizerTap.listen).
     private var skipping = false
@@ -173,6 +185,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private var startAskedAt: CFTimeInterval?
     private var startupWaitingReason: String?
     private var startupCheckpointLogged = false
+    private var queuedStart: (item: ObjectIdentifier, at: CFTimeInterval)?
     /// When the playing deck ran dry mid-track, until it plays again.
     private var stalledAt: CFTimeInterval?
 
@@ -181,6 +194,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let now = CACurrentMediaTime()
         switch deck.timeControlStatus {
         case .playing:
+            if let queued = queuedStart, let item = deck.currentItem, queued.item == ObjectIdentifier(item) {
+                queuedStart = nil
+                nativeLog(String(format: "AudioEngine: queued item reported playing after %.0f ms", (now - queued.at) * 1000))
+            }
             if let asked = startAskedAt {
                 startAskedAt = nil
                 nativeLog(String(format: "AudioEngine: first sound %.0f ms after play", (now - asked) * 1000))
@@ -202,6 +219,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             nativeLog("AudioEngine: stalled at \(at.isFinite ? String(format: "%.1f", at) : "?")s, waiting for data", warn: true)
         default:
             stalledAt = nil // paused: a stall that ends in a pause is not timed
+            queuedStart = nil
         }
     }
 
@@ -235,13 +253,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         self.listener = listener
     }
 
-    func play(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
+    func play(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64, fileDurationMs: Int64) {
         let asked = CACurrentMediaTime()
-        onMain { self.playOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes, asked: asked) }
+        onMain { self.playOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength,
+                                 chunkBytes: chunkBytes, fileDurationMs: fileDurationMs, asked: asked) }
     }
 
     private func playOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64,
-                            asked: CFTimeInterval) {
+                            fileDurationMs: Int64, asked: CFTimeInterval) {
         // Where a start spends its time before AVPlayer has the item: a Tidal fallback once took 6.9 s between Kotlin
         // handing the track over and the engine starting it, with nothing logged in between.
         var stages: [(String, CFTimeInterval)] = []
@@ -257,6 +276,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             listener?.onError(message: "Bad stream URL", httpStatus: 0)
             return
         }
+        readFileDuration(for: item, savedMs: fileDurationMs)
         lap("make item")
         activateSession()
         lap("audio session")
@@ -276,19 +296,28 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         go()
     }
 
-    func setNext(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
-        onMain { self.setNextOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes) }
+    func setNext(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64, fileDurationMs: Int64) {
+        onMain { self.setNextOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength,
+                                    chunkBytes: chunkBytes, fileDurationMs: fileDurationMs) }
     }
 
-    private func setNextOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
+    private func setNextOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64, fileDurationMs: Int64) {
         if let f = fade, !f.swapped { return } // ponytail: a queue edit mid-fade keeps the track already fading in
         clearNextOnMain()
         guard currentItem != nil else { return }
-        pendingNext = PendingNext(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
+        pendingNext = PendingNext(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength,
+                                  chunkBytes: chunkBytes, fileDurationMs: fileDurationMs)
         materializeNextIfDue()
     }
 
-    private struct PendingNext { let url: String; let headers: [String: String]; let mimeType: String; let contentLength: Int64; let chunkBytes: Int64 }
+    private struct PendingNext {
+        let url: String
+        let headers: [String: String]
+        let mimeType: String
+        let contentLength: Int64
+        let chunkBytes: Int64
+        let fileDurationMs: Int64
+    }
 
     /// The next track, held until the current one nears its end. AVQueuePlayer starts loading a queued item at once,
     /// so a track queued at the start of the current one opened a second connection to the same host for minutes;
@@ -332,6 +361,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 }
                 guard let built else { return }
                 let item = self.adopt(built)
+                self.readFileDuration(for: item, savedMs: p.fileDurationMs)
                 self.nextItem = item
                 self.fadeSkipped = false
                 self.place(item)
@@ -430,6 +460,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         nextItem = nil
         loaders.values.forEach { $0.cancelAll() }
         loaders.removeAll()
+        fileDurations.removeAllObjects()
         pendingSeekMs = nil
         seekingToMs = nil
         reopening = nil
@@ -437,6 +468,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         pausedByInterruption = false
         failedItems.removeAll()
         startAskedAt = nil
+        queuedStart = nil
         stalledAt = nil
     }
 
@@ -774,7 +806,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         guard item === currentItem else { return }
         // AVFoundation reads some fragmented MP4s as twice their length (see ChunkedResourceLoader.durationHint), so
         // the real end arrives as a failure. That is the track ending, not breaking: move on rather than retry it.
-        if atStatedEnd(item) { return endByHint(item) }
+        if atStatedEnd(item) { return endByHint(item, reason: "failure near end") }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
         if let asked = startAskedAt {
             startAskedAt = nil
@@ -847,34 +879,75 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if replaying {
             nativeLog("AudioEngine: tail replaying (back to \(position)s of \(duration)s); ending the track")
             stuckAt = -1
-            return endByHint(item)
+            return endByHint(item, reason: "tail replay")
         }
         // Past the end only by a length the stream states exactly (dur=, or FLAC's STREAMINFO); AVFoundation's own
         // estimate can be short or long, so it never cuts a track by itself.
-        let exact = exactDuration(of: item)
-        let overrun = exact.map { position >= $0 - 0.05 } ?? false
+        // AVPlayer owns a healthy boundary. Manually advance only if it overruns a corrected endpoint
+        // or if its clock has stopped near the end of a supplied file.
+        let endpoint = configurePlaybackEnd(for: item)
+        let overrun = endpoint.map { position > $0 + 0.15 } ?? false
         let atEnd = delivered && position >= duration - 2
         guard overrun || atEnd else { stuckAt = -1; return }
         if overrun || (abs(position - stuckAt) <= 0.05 && CACurrentMediaTime() - stuckSince > 1.5) {
             nativeLog("AudioEngine: \(overrun ? "past" : "stuck at") the end (\(position)s of \(duration)s, \(player.timeControlStatus.rawValue)); ending the track")
             stuckAt = -1
-            return endByHint(item)
+            return endByHint(item, reason: overrun ? "endpoint overrun" : "clock stopped near end")
         }
         if abs(position - stuckAt) > 0.05 { stuckAt = position; stuckSince = CACurrentMediaTime() }
     }
 
     /// The track's length as its source states it, when one does: googlevideo's dur=, or a FLAC's STREAMINFO.
     private func exactDuration(of item: AVPlayerItem) -> Double? {
+        if let file = fileDurations.object(forKey: item.asset),
+           !file.estimated || PlaybackDuration.correctsDoubledTimeline(native: item.duration.seconds, file: file.seconds) {
+            return file.seconds
+        }
         guard let loader = loaders[ObjectIdentifier(item)] else { return nil }
-        if let hint = loader.durationHint, hint > 0 { return hint }
+        if let hint = loader.durationHint, hint.isFinite, hint > 0 { return hint }
         if let f = loader.flacInfo, f.totalSamples > 0, f.sampleRate > 0 { return Double(f.totalSamples) / Double(f.sampleRate) }
         return nil
     }
 
+    private func readFileDuration(for item: AVPlayerItem, savedMs: Int64) {
+        guard let asset = item.asset as? AVURLAsset, asset.url.isFileURL else { return }
+        if savedMs > 0 {
+            fileDurations.setObject(FileDuration(seconds: Double(savedMs) / 1000, estimated: false), forKey: asset)
+            return
+        }
+        guard asset.url.pathExtension.lowercased() == "m4a" else { return }
+        let url = asset.url
+        DispatchQueue.global(qos: .utility).async { [weak self, weak asset] in
+            guard let seconds = PlaybackDuration.estimateAAC(in: url) else { return }
+            DispatchQueue.main.async { [weak self, weak asset] in
+                guard let self, let asset,
+                      self.currentItem?.asset === asset || self.nextItem?.asset === asset else { return }
+                self.fileDurations.setObject(FileDuration(seconds: seconds, estimated: true), forKey: asset)
+                if self.currentItem?.asset === asset {
+                    if let current = self.currentItem { self.configurePlaybackEnd(for: current) }
+                    self.reportProgress()
+                    self.updateNowPlayingTiming()
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func configurePlaybackEnd(for item: AVPlayerItem) -> Double? {
+        guard let end = PlaybackDuration.endpoint(native: item.duration.seconds, known: exactDuration(of: item)) else { return nil }
+        let boundary = CMTime(seconds: end, preferredTimescale: 1000)
+        if item.forwardPlaybackEndTime != boundary {
+            item.forwardPlaybackEndTime = boundary
+            nativeLog(String(format: "AudioEngine: corrected duration from %.3fs to %.3fs (%@)",
+                             item.duration.seconds, end, fileDurations.object(forKey: item.asset) == nil ? "stream" : "file"))
+        }
+        return end
+    }
+
     /// [item] has played the whole of its stated length: on to the queued track as a natural end would.
-    private func endByHint(_ item: AVPlayerItem) {
+    private func endByHint(_ item: AVPlayerItem, reason: String) {
         guard item === currentItem, fade == nil else { return }
-        nativeLog("AudioEngine: track over at \(item.currentTime().seconds)s (parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
+        nativeLog("AudioEngine: track over at \(item.currentTime().seconds)s (reason=\(reason), parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
         // No forced build of a next track not yet placed: that would put an asset creation back on main. Kotlin
         // starts the next track from onEnded below instead (a short gap rather than a gapless join, in this rare case).
         if parked { return handOverNow() }
@@ -908,6 +981,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 guard let self, item === self.currentItem else { return }
                 switch item.status {
                 case .readyToPlay:
+                    self.configurePlaybackEnd(for: item)
                     if let ms = self.pendingSeekMs {
                         self.pendingSeekMs = nil
                         self.seekTo(positionMs: ms)
@@ -995,6 +1069,15 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             return
         }
         if now === nextItem {
+            let position = now.currentTime().seconds
+            let buffered = now.loadedTimeRanges.map(\.timeRangeValue).first {
+                $0.start.seconds <= position && CMTimeRangeGetEnd($0).seconds > position
+            }.map { CMTimeRangeGetEnd($0).seconds - position } ?? 0
+            let playing = player.timeControlStatus == .playing
+            queuedStart = playing ? nil : (ObjectIdentifier(now), CACurrentMediaTime())
+            nativeLog(String(format: "AudioEngine: queued transition position=%.3fs buffered=%.3fs ready=%@ playing=%@ waiting=%@",
+                             position, buffered, now.isPlaybackLikelyToKeepUp ? "true" : "false",
+                             playing ? "true" : "false", player.reasonForWaitingToPlay?.rawValue ?? "none"))
             IosDsp.shared.reset()
             setSkipping(false)
             nextItem = nil
@@ -1015,12 +1098,6 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let duration = streamDuration(of: item)
         let isPlaying = player.timeControlStatus == .playing
         let isBuffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-        // Past the stated end and still "playing" or waiting for bytes that don't exist (the doubled length above):
-        // the track is over. Not while seeking, or while a blend owns the hand-over.
-        if let hint = loaders[ObjectIdentifier(item)]?.durationHint, seekingToMs == nil, fade == nil,
-           position >= hint - 0.05, isPlaying || isBuffering {
-            return endByHint(item)
-        }
         wasPlaying = isPlaying || isBuffering
         listener?.onProgress(
             positionMs: position.isFinite ? Int64(position * 1000) : 0,

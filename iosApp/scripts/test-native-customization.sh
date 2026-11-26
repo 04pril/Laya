@@ -45,3 +45,6 @@ xcrun swiftc "$task_root/iosApp/LayaWidgets/PosterSurfaceRenderer.swift" "$task_
 
 xcrun swiftc "$task_root/iosApp/iosApp/AdaptiveContentBounds.swift" "$task_root/iosApp/tests/AdaptiveContentBoundsTests.swift" -o "$task_tmp/adaptive-bounds"
 "$task_tmp/adaptive-bounds"
+
+xcrun swiftc "$task_root/iosApp/iosApp/PlaybackDuration.swift" "$task_root/iosApp/tests/PlaybackDurationTests.swift" -o "$task_tmp/playback-duration"
+"$task_tmp/playback-duration"

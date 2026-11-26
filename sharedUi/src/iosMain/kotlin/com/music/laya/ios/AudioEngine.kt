@@ -7,10 +7,10 @@ package com.music.laya.ios
  */
 interface AudioEngine {
     /** Start [url] from the beginning, dropping anything queued. Each HTTP request carries [headers] and asks for at most [chunkBytes]. */
-    fun play(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long)
+    fun play(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long, fileDurationMs: Long)
 
     /** Queue the track after the current one so it starts gaplessly, even with the screen locked. */
-    fun setNext(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long)
+    fun setNext(url: String, headers: Map<String, String>, mimeType: String, contentLength: Long, chunkBytes: Long, fileDurationMs: Long)
     fun clearNext()
 
     /**

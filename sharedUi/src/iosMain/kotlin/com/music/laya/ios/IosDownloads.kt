@@ -89,9 +89,15 @@ internal object IosDownloads {
         val artwork: String? = null, val thumb: String? = null, val duration: String? = null,
         val album: String? = null, val albumId: String? = null, val artistId: String? = null,
         val explicit: Boolean? = null, val video: Boolean = false, val badge: String? = null, val added: Double = 0.0,
+        val streamDurationMs: Long? = null,
     )
 
-    private class Route(val ext: String, val badge: String?, val fetch: suspend (BufferedSink, (Long, Long) -> Unit) -> Unit)
+    private class Route(
+        val ext: String,
+        val badge: String?,
+        val streamDurationMs: Long? = null,
+        val fetch: suspend (BufferedSink, (Long, Long) -> Unit) -> Unit,
+    )
 
     private val fs = FileSystem.SYSTEM
     private val json = Json { ignoreUnknownKeys = true }
@@ -157,6 +163,8 @@ internal object IosDownloads {
         if (!onDisk(e)) { writeIndex(saved.value - videoId); return null }
         return "file://${fileOf(e)}"
     }
+
+    fun streamDurationMs(videoId: String): Long = saved.value[videoId]?.streamDurationMs ?: 0L
 
     private fun localSong(e: Entry) = Song(
         videoId = e.id, title = e.title, artist = e.artist,
@@ -247,7 +255,7 @@ internal object IosDownloads {
             saved.value + (savedId to Entry(
                 savedId, track.title, track.artist, target.name, artwork?.name, track.thumbnailUrl, track.durationText,
                 track.albumName ?: song.albumName, track.albumId ?: song.albumId, track.artistId ?: song.artistId,
-                track.isExplicit, track.isVideo, route.badge, NSDate().timeIntervalSince1970,
+                track.isExplicit, track.isVideo, route.badge, NSDate().timeIntervalSince1970, route.streamDurationMs,
             )),
         )
         TrackLog.d("Laya", "downloaded $id as $savedId, ${target.name} (${route.badge ?: route.ext})", about = id)
@@ -273,7 +281,11 @@ internal object IosDownloads {
         val ytId = youtubeSeedFor(song) ?: error("No YouTube match for this track")
         // m4a only: AVPlayer can't play the WebM/Opus rungs.
         val stream = StreamResolver.resolveForDownload(ytId, quality.maxKbps, requireM4a = true)
-        return Route("m4a", if (stream.kbps > 0) "AAC · ${stream.kbps} kbps" else null) { sink, progress -> fetchRanged(stream.url, sink, progress) }
+        val durationMs = Url(stream.url).parameters["dur"]?.toDoubleOrNull()
+            ?.takeIf { it.isFinite() && it > 0 }?.let { kotlin.math.round(it * 1000).toLong() }
+        return Route("m4a", if (stream.kbps > 0) "AAC · ${stream.kbps} kbps" else null, durationMs) { sink, progress ->
+            fetchRanged(stream.url, sink, progress)
+        }
     }
 
     /** Resolve a downloadable source within the lookup budget, including registered Tidal DASH plans. */

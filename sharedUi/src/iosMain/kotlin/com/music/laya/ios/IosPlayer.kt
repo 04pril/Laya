@@ -144,6 +144,7 @@ private class Opened(
     val pending: Deferred<SourceStream?>? = null,
     /** The source config that served it, when it is not YouTube: what a playback failure rules out next time. */
     val configId: String? = null,
+    val fileDurationMs: Long = 0,
 )
 
 private class KaraokeSource(val url: String, val headers: Map<String, String>, val mime: String, val length: Long)
@@ -741,7 +742,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
                 "flac" -> "audio/flac"; "wav" -> "audio/wav"; "aiff" -> "audio/aiff"; "mp3" -> "audio/mpeg"; "aac" -> "audio/aac"
                 else -> "audio/mp4"
             }
-            return Opened(url, emptyMap(), mime, -1L, "Downloaded")
+            return Opened(url, emptyMap(), mime, -1L, "Downloaded", fileDurationMs = IosDownloads.streamDurationMs(song.videoId))
         }
         // Reverted by hand: YouTube's own audio, whatever the track was queued from, until "Upgrade quality".
         if (IosOriginalVersion.isPinned(song.videoId)) youtubeSeedFor(song)?.let { return youtube(it) }
@@ -823,10 +824,13 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         NerdStats.recordSource(song.videoId, o.sourceName)
         o.format?.let { NerdStats.onSourceStream(song.videoId, it, o.sourceName) }
         if (!next) { alignLyrics(song, o); playingOpened = song.videoId to o } else queuedOpened = song.videoId to o
-        if (next) { syncTransition(); engine.setNext(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url)) } // plan first: the engine parks the track by it
+        if (next) {
+            syncTransition() // plan first: the engine parks the track by it
+            engine.setNext(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url), o.fileDurationMs)
+        }
         else if (swap) engine.swapCurrent(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url))
         else {
-            engine.play(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url))
+            engine.play(o.url, o.headers, o.mime, o.length, chunkBytesFor(o.url), o.fileDurationMs)
             // Queued behind the engine's own hop to the main thread, so it lands after the old track is stopped.
             scope.launch { handing = false }
         }
