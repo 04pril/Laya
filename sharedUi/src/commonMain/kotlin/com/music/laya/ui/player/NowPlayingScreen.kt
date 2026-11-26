@@ -1553,6 +1553,7 @@ fun NowPlayingScreen(
     // layouts end on, and the only thing in the landscape player's left column
     // besides the sleeve.
     val tabletPlayer = tabletPlayerLayoutAvailable(PlayerPlatform.host.supportsExpandedPlayerLayout, windowWidth, windowHeight)
+    val landscape = landscapePlayerAvailable(windowWidth, windowHeight)
     val playerActions: @Composable () -> Unit = {
         if (tabletPlayer) {
             TabletPlayerActionRow(lyricsOpen, queueOpen, autoplayEnabled, accountName,
@@ -1574,6 +1575,7 @@ fun NowPlayingScreen(
                 onListenTogether = onListenTogether,
                 onOpenListenTogetherMembers = openListenTogetherMembers,
                 videoToggle = videoToggle,
+                alignWithPortraitTransport = !landscape,
             )
             // Keep the current output caption visible in every state.
             Spacer(Modifier.height(PlayerPlatform.host.outputCaptionGap))
@@ -1667,7 +1669,6 @@ fun NowPlayingScreen(
     // gesture exist to let one tall column be the player, the lyrics and the
     // queue in turn, and in landscape none of them has anything to do — the
     // sleeve never has to get out of anything's way.
-    val landscape = landscapePlayerAvailable(windowWidth, windowHeight)
     // Tablet-sized players use the full-cover blur in all three states. On a
     // phone only the lyrics and queue replace the main player's seam-aware,
     // reflected mesh; the main player deliberately keeps its existing look.

@@ -1,6 +1,7 @@
 package com.music.laya.ui.player
 
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -9,13 +10,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.SemanticsNode
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.music.laya.data.settings.MixBlend
+import com.music.laya.data.settings.IosCustomization
+import com.music.laya.sharedui.resources.*
 import com.music.laya.ui.theme.LayaTheme
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.jetbrains.compose.resources.stringResource
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -60,41 +67,83 @@ class PortraitPlayerSpacingTest {
             }
         } as PlayerSettingsSource
         val host = Proxy.newProxyInstance(PlayerHost::class.java.classLoader, arrayOf(PlayerHost::class.java)) { _, method, _ ->
-            check(method.name == "getSettings")
-            settings
+            when (method.name) {
+                "getSettings" -> settings
+                "getParty" -> MutableStateFlow(PartyUi())
+                "getHasNativeOutputGlyph" -> true
+                "OutputGlyph" -> null
+                else -> error("Unexpected player host call ${method.name}")
+            }
         } as PlayerHost
         val previousHost = runCatching { PlayerPlatform.host }.getOrNull()
+        val hideParty = IosCustomization.hideParty.value
+        val hideVideo = IosCustomization.hideVideo.value
         PlayerPlatform.install(host)
         try {
-            for (fontScale in listOf(1f, 1.6f, 2f)) {
+            for ((width, fontScale) in listOf(332 to 1f, 340 to 1.6f, 260 to 2f)) {
                 for (showVolume in listOf(true, false)) {
+                    IosCustomization.hideParty.value = showVolume
+                    IosCustomization.hideVideo.value = showVolume
                     val bounds = mutableMapOf<String, Rect>()
+                    lateinit var horizontalPairs: List<Pair<String, String>>
                     fun record(name: String) = Modifier.onGloballyPositioned { bounds[name] = it.boundsInRoot() }
-                    val scene = ImageComposeScene(332, 400, Density(1f, fontScale)) {
+                    val scene = ImageComposeScene(width, 400, Density(1f, fontScale)) {
                         LayaTheme(darkTheme = true) {
-                            PortraitPlaybackControls(
-                                gap = 30.dp,
-                                scrubber = {
-                                    Box(record("seek")) {
-                                        PlayerScrubber({ 0.4f }, 180_000, false, false, null, {}, {})
-                                    }
-                                },
-                                transport = {
-                                    Box(record("buttons")) {
-                                        TransportRow(false, false, true, true, {}, {}, {}, portraitPhone = true)
-                                    }
-                                },
-                                volume = {
-                                    Box(record("volume")) {
-                                        if (showVolume) VolumeRow({ 0.5f }, {}, {})
-                                        else Box(Modifier.fillMaxWidth().height(VOLUME_ROW_HEIGHT))
-                                    }
-                                },
+                            horizontalPairs = listOf(
+                                stringResource(Res.string.widget_previous) to stringResource(Res.string.open_lyrics),
+                                stringResource(Res.string.play) to stringResource(Res.string.audio_output),
+                                stringResource(Res.string.widget_next) to stringResource(Res.string.up_next),
                             )
+                            Column {
+                                PortraitPlaybackControls(
+                                    gap = 30.dp,
+                                    scrubber = {
+                                        Box(record("seek")) {
+                                            PlayerScrubber({ 0.4f }, 180_000, false, false, null, {}, {})
+                                        }
+                                    },
+                                    transport = {
+                                        Box(record("buttons")) {
+                                            TransportRow(false, false, true, true, {}, {}, {}, portraitPhone = true)
+                                        }
+                                    },
+                                    volume = {
+                                        Box(record("volume")) {
+                                            if (showVolume) VolumeRow({ 0.5f }, {}, {})
+                                            else Box(Modifier.fillMaxWidth().height(VOLUME_ROW_HEIGHT))
+                                        }
+                                    },
+                                )
+                                PlayerActionRow(
+                                    lyricsOpen = false,
+                                    queueOpen = false,
+                                    shuffleEnabled = false,
+                                    repeatMode = 0,
+                                    autoplayEnabled = false,
+                                    onToggleLyrics = {},
+                                    onToggleQueue = {},
+                                    onToggleShuffle = {},
+                                    onCycleRepeat = {},
+                                    onToggleAutoplay = {},
+                                    onOpenOutput = {},
+                                    onListenTogether = {},
+                                    onOpenListenTogetherMembers = {},
+                                    videoToggle = VideoToggle(video = false, switching = false, onToggle = {}),
+                                    alignWithPortraitTransport = true,
+                                )
+                            }
                         }
                     }
                     try {
                         repeat(3) { scene.render(it * 100_000_000L).close() }
+                        fun nodes(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::nodes)
+                        val semantics = scene.semanticsOwners.flatMap { nodes(it.rootSemanticsNode) }
+                        fun centerOf(label: String) = semantics.first {
+                            it.config.getOrNull(SemanticsProperties.ContentDescription)?.contains(label) == true
+                        }.boundsInRoot.center.x
+                        for ((transport, action) in horizontalPairs) {
+                            assertEquals(centerOf(transport), centerOf(action), absoluteTolerance = 1f)
+                        }
                     } finally {
                         scene.close()
                     }
@@ -105,6 +154,8 @@ class PortraitPlayerSpacingTest {
                 }
             }
         } finally {
+            IosCustomization.hideParty.value = hideParty
+            IosCustomization.hideVideo.value = hideVideo
             previousHost?.let(PlayerPlatform::install)
         }
     }

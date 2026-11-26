@@ -119,7 +119,7 @@ class AndroidPlayerHost(context: Context) : PlayerHost {
 
     override val supportsExpandedPlayerLayout: Boolean get() = true
     override val portraitBottomPadding get() = 4.dp
-    override val outputCaptionGap get() = 8.dp
+    override val outputCaptionGap get() = 0.dp
     override val prominentOutputCaption get() = true
     override val outputCaptionAlignment get() = androidx.compose.ui.Alignment.Center
 
