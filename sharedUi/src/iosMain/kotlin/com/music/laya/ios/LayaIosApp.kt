@@ -1621,7 +1621,12 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             // wide (unfolded, sideways) window sits centred in the room left of it at the usual 640 pt
                             // rather than against the left edge.
                             modifier = Modifier.align(Alignment.BottomCenter)
-                                .padding(start = if (duo.railOnRight) 0.dp else duo.strip.dp, end = if (duo.railOnRight) duo.strip.dp else 0.dp)
+                                // Clear of the rail itself, not just the strip: the 60 pt rail is centred on the strip
+                                // and, on a strip narrower than it, reaches past the strip's edge.
+                                .padding(
+                                    start = if (duo.railOnRight) 0.dp else railClearance(duo.strip).dp,
+                                    end = if (duo.railOnRight) railClearance(duo.strip).dp else 0.dp,
+                                )
                                 .widthIn(max = 640.dp).fillMaxWidth().onSizeChanged {
                                 barHeight = with(density) { it.height.toDp() }
                             },
@@ -1951,3 +1956,10 @@ private fun Song.withLinks(extra: Song?): Song =
 
 /** How a tab change moves: tabs slide past each other; Search rises over the screen and drops away again. */
 private enum class TabMotion { Slide, Rise, Drop }
+
+/**
+ * How far from the edge the Duo's mini player has to stop to clear the tab rail beside it: the 60 pt rail sits
+ * centred on the status strip (at the edge, if the strip is narrower than the rail), plus a 4 pt gap. The bar's own
+ * gutter adds to that.
+ */
+private fun railClearance(strip: Double): Double = maxOf(strip, maxOf(60.0, strip / 2 + 30.0) + 4.0)
