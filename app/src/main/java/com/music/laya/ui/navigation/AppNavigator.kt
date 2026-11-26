@@ -15,6 +15,7 @@ import com.music.laya.data.model.HomeShelf
  */
 sealed interface AppRoute {
     data object Settings : AppRoute
+    data class SettingsSection(val category: com.music.laya.ui.screens.SettingsCategory) : AppRoute
     data object HomeLayout : AppRoute
     data object PlayerPreferences : AppRoute
     data object AccountScrobbling : AppRoute

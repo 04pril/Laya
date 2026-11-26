@@ -3053,7 +3053,7 @@ private fun LayaApp(
                                 profile = homePlaylistProfile,
                                 contentPadding = listPadding,
                             )
-                        } else if (pageRoute == AppRoute.Settings) {
+                        } else if (pageRoute == AppRoute.Settings || pageRoute is AppRoute.SettingsSection) {
                             SettingsScreen(
                                 windowWidth = windowWidth,
                                 signedIn = signedIn,
@@ -3081,6 +3081,8 @@ private fun LayaApp(
                                 onPlayerPreferences = { navigator.push(AppRoute.PlayerPreferences) },
                                 onHomeLayout = { navigator.push(AppRoute.HomeLayout) },
                                 onProxySettings = { context.startActivity(Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java)) },
+                                category = (pageRoute as? AppRoute.SettingsSection)?.category,
+                                onOpenCategory = { navigator.push(AppRoute.SettingsSection(it)) },
                                 contentPadding = listPadding,
                             )
                         } else if (page != null) {
@@ -3664,6 +3666,7 @@ private fun LayaApp(
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.Settings -> stringResource(R.string.settings)
+                        is AppRoute.SettingsSection -> org.jetbrains.compose.resources.stringResource(route.category.title)
                         AppRoute.HomeLayout -> org.jetbrains.compose.resources.stringResource(SharedRes.string.home_sections)
                         AppRoute.PlayerPreferences -> org.jetbrains.compose.resources.stringResource(SharedRes.string.player_preferences)
                         AppRoute.Replay -> stringResource(R.string.replay)

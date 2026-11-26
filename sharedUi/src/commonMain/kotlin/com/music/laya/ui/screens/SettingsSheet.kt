@@ -25,8 +25,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.ScrollState
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.material.icons.Icons
-import androidx.compose.material3.SecondaryScrollableTabRow
-import androidx.compose.material3.Tab
 import androidx.compose.material.icons.automirrored.rounded.Notes
 import androidx.compose.material.icons.automirrored.rounded.VolumeOff
 import androidx.compose.material.icons.rounded.Animation
@@ -151,12 +149,19 @@ import kotlin.math.roundToInt
  * title. Anything with more than two choices opens a sheet rather than pushing
  * a row of chips into the layout.
  */
-private enum class SettingsTab(val title: org.jetbrains.compose.resources.StringResource) {
-    APP(Res.string.settings_tab_app),
-    PLAYBACK(Res.string.playback),
-    HOME(Res.string.settings_tab_home),
-    LIBRARY(Res.string.library),
-    CONNECTIONS(Res.string.settings_tab_connections),
+enum class SettingsCategory(val title: org.jetbrains.compose.resources.StringResource, val icon: ImageVector) {
+    CONNECTIONS(Res.string.settings_connections, Icons.Rounded.Groups),
+    AUDIO_QUALITY(Res.string.audio_quality, Icons.Rounded.GraphicEq),
+    DOWNLOADS(Res.string.downloads, Icons.Rounded.Download),
+    PLAYBACK(Res.string.playback, Icons.Rounded.Tune),
+    APPEARANCE(Res.string.appearance, Icons.Rounded.Brightness4),
+    PERFORMANCE(Res.string.performance, Icons.Rounded.Animation),
+    LOCAL_MUSIC(Res.string.local_music, Icons.Rounded.LibraryMusic),
+    STORAGE(Res.string.storage, Icons.Rounded.Storage),
+    YOUR_DATA(Res.string.your_data, Icons.Rounded.BarChart),
+    MISCELLANEOUS(Res.string.miscellaneous, Icons.Rounded.Apps),
+    LANGUAGE(Res.string.language, Icons.Rounded.Language),
+    ADVANCED(Res.string.advanced_options, Icons.Rounded.Tune),
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,6 +191,8 @@ fun SettingsScreen(
     playerPreferencesSubtitle: String? = null,
     onHomeLayout: (() -> Unit)? = null,
     onProxySettings: (() -> Unit)? = null,
+    category: SettingsCategory? = null,
+    onOpenCategory: (SettingsCategory) -> Unit,
 ) {
     val host = SettingsExtras.host
     val engineOptions = host.hasEngineOptions
@@ -294,16 +301,15 @@ fun SettingsScreen(
     // Made fresh on every pass rather than remembered: it tallies the rows
     // that answered to the query, and that tally has to start from zero each
     // time the query changes.
-    val search = SettingsSearch(searchQuery)
-    val tabbed = onHomeLayout != null
-    var selectedTab by rememberSaveable { mutableStateOf(SettingsTab.APP.name) }
-    fun show(tab: SettingsTab) = !tabbed || searchQuery.isNotBlank() || selectedTab == tab.name
+    val searching = category == null && searchQuery.isNotBlank()
+    val search = SettingsSearch(if (searching) searchQuery else "")
+    fun show(group: SettingsCategory) = searching || category == group
 
     // What is left after a keystroke is a different list, and the offset the
     // last one was scrolled to means nothing in it.
     val scrollState = rememberSaveable(saver = ScrollState.Saver) { ScrollState(0) }
     var isFirstSearchComposition by remember { mutableStateOf(true) }
-    LaunchedEffect(searchQuery, selectedTab) {
+    LaunchedEffect(searchQuery) {
         if (isFirstSearchComposition) {
             // Skip the initial composition — on Activity recreation, and on
             // coming back from a page opened here: rememberSaveable already
@@ -322,58 +328,62 @@ fun SettingsScreen(
             .padding(contentPadding),
     ) {
         Text(
-            text = stringResource(Res.string.settings),
+            text = stringResource(category?.title ?: Res.string.settings),
             style = MaterialTheme.typography.displayLarge,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 8.dp, bottom = 14.dp),
         )
-        SearchField(
-            query = searchQuery,
-            onQueryChange = { searchQuery = it },
-            onSubmit = {},
-            placeholder = stringResource(Res.string.settings_search_hint),
-            modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
-            trailing = {
-                com.music.laya.ui.components.VoiceSearchButton(onResult = { searchQuery = it }, onPartial = { searchQuery = it })
-            },
-        )
+        if (category == null) {
+            if (onPlayerPreferences != null) SearchableSettingsGroup(search) {
+                val title = stringResource(Res.string.player_preferences)
+                val subtitle = playerPreferencesSubtitle ?: stringResource(Res.string.android_player_preferences_subtitle)
+                row(title, subtitle, "font", "가사", "lyrics", "좋아요", "Android Auto", "CarPlay") {
+                    SettingsRow(icon = Icons.Rounded.Tune, title = title, subtitle = subtitle, onClick = onPlayerPreferences)
+                }
+            }
 
-        if (tabbed && searchQuery.isBlank()) {
-            val tabs = SettingsTab.entries
-            SecondaryScrollableTabRow(
-                selectedTabIndex = tabs.indexOfFirst { it.name == selectedTab }.coerceAtLeast(0),
-                edgePadding = 16.dp,
-                containerColor = MaterialTheme.colorScheme.background,
-            ) {
-                tabs.forEach { tab ->
-                    Tab(
-                        selected = selectedTab == tab.name,
-                        onClick = { selectedTab = tab.name },
-                        text = { Text(stringResource(tab.title), maxLines = 1) },
-                    )
+            SearchField(
+                query = searchQuery,
+                onQueryChange = { searchQuery = it },
+                onSubmit = {},
+                placeholder = stringResource(Res.string.settings_search_hint),
+                modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 4.dp),
+                trailing = {
+                    com.music.laya.ui.components.VoiceSearchButton(onResult = { searchQuery = it }, onPartial = { searchQuery = it })
+                },
+            )
+
+            if (onHomeLayout != null) SearchableSettingsGroup(search) {
+                val title = stringResource(Res.string.home_sections)
+                val subtitle = stringResource(Res.string.home_sections_subtitle)
+                row(title, subtitle, "My Playlist", "추천", "recommendations", "reorder") {
+                    SettingsRow(icon = Icons.Rounded.Apps, title = title, subtitle = subtitle, onClick = onHomeLayout)
+                }
+            }
+
+            if (!searching) {
+                val categories = SettingsCategory.entries.filter {
+                    when (it) {
+                        SettingsCategory.CONNECTIONS -> onProxySettings != null || onAccountScrobbling != null ||
+                            onListenTogether != null || onWearOs != null
+                        SettingsCategory.DOWNLOADS -> host.hasDownloads
+                        SettingsCategory.PERFORMANCE -> refreshRates != null
+                        SettingsCategory.LOCAL_MUSIC -> localMusicFolder != null
+                        SettingsCategory.STORAGE -> host.hasSongCache
+                        SettingsCategory.LANGUAGE -> onAppLanguage != null
+                        else -> true
+                    }
+                }
+                SettingsGroup {
+                    categories.forEachIndexed { index, entry ->
+                        if (index > 0) RowDivider()
+                        SettingsRow(icon = entry.icon, title = stringResource(entry.title), onClick = { onOpenCategory(entry) })
+                    }
                 }
             }
         }
 
-        if (onHomeLayout != null && show(SettingsTab.HOME)) SearchableSettingsGroup(search) {
-            val title = stringResource(Res.string.home_sections)
-            val subtitle = stringResource(Res.string.home_sections_subtitle)
-            row(title, subtitle, "My Playlist", "추천", "recommendations", "reorder") {
-                SettingsRow(icon = Icons.Rounded.Apps, title = title, subtitle = subtitle, onClick = onHomeLayout)
-            }
-        }
-
-        if (onPlayerPreferences != null && show(SettingsTab.PLAYBACK)) {
-            val title = stringResource(Res.string.player_preferences)
-            val subtitle = playerPreferencesSubtitle ?: stringResource(Res.string.android_player_preferences_subtitle)
-            SearchableSettingsGroup(search, header = stringResource(Res.string.player_customization_group)) {
-                row(title, subtitle, stringResource(Res.string.blur_unfocused_lyrics),
-                    "프록시", "proxy", "WireGuard", "font", "가사", "lyrics", "좋아요", "Android Auto") {
-                    SettingsRow(title = title, subtitle = subtitle, onClick = onPlayerPreferences)
-                }
-            }
-        }
-        if (show(SettingsTab.CONNECTIONS)) SearchableSettingsGroup(search) {
+        if (show(SettingsCategory.CONNECTIONS)) SearchableSettingsGroup(search) {
             if (onProxySettings != null) {
                 val title = stringResource(Res.string.settings_proxy_title)
                 val subtitle = "WireGuard · HTTP · HTTPS · SOCKS5"
@@ -421,7 +431,7 @@ fun SettingsScreen(
         // above lists that as the module's own row now. Lossless itself is no
         // longer a setting at all — see
         // [SourceResolver.requestForNow][com.music.laya.data.sources.SourceResolver.requestForNow].
-        if (show(SettingsTab.PLAYBACK)) SearchableSettingsGroup(search, header = stringResource(Res.string.audio_quality)) {
+        if (show(SettingsCategory.AUDIO_QUALITY)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.audio_quality) else null) {
             if (onSources != null) {
                 val sourceTitle = stringResource(Res.string.source)
                 val sourceSubtitle = stringResource(Res.string.sources_subtitle)
@@ -500,7 +510,7 @@ fun SettingsScreen(
         // does this minute cost"; these answer "what am I keeping, and when may
         // it be fetched" — and those two questions only make sense read
         // together, which is what puts them side by side here.
-        if (host.hasDownloads && show(SettingsTab.LIBRARY)) SearchableSettingsGroup(search, header = stringResource(Res.string.downloads)) {
+        if (host.hasDownloads && show(SettingsCategory.DOWNLOADS)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.downloads) else null) {
             val downloadQualityTitle = stringResource(Res.string.download_quality)
             row(downloadQualityTitle, "offline", "lossless") {
                 SettingsRow(
@@ -534,7 +544,7 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsTab.PLAYBACK)) SearchableSettingsGroup(search, header = stringResource(Res.string.playback)) {
+        if (show(SettingsCategory.PLAYBACK)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.playback) else null) {
             val preferMusicOnlyTitle = stringResource(Res.string.prefer_music_only)
             // Not an engine option: both phones' players decide a music video's picture by it.
             row(preferMusicOnlyTitle, "video", "audio", "music video") {
@@ -803,7 +813,7 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsTab.APP)) SearchableSettingsGroup(search, header = stringResource(Res.string.appearance)) {
+        if (show(SettingsCategory.APPEARANCE)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.appearance) else null) {
             val themeTitle = stringResource(Res.string.theme)
             row(themeTitle, "dark mode", "light mode") {
                 SettingsRow(icon = Icons.Rounded.Brightness4, title = themeTitle)
@@ -1140,7 +1150,7 @@ fun SettingsScreen(
             }
         }
 
-        if (refreshRates != null && show(SettingsTab.APP)) SearchableSettingsGroup(search, header = stringResource(Res.string.performance)) {
+        if (refreshRates != null && show(SettingsCategory.PERFORMANCE)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.performance) else null) {
             val highPerformanceModeTitle = stringResource(Res.string.high_performance_mode)
             row(highPerformanceModeTitle, "frame rate", "refresh rate", "hz", "battery", "smooth") {
                 SettingsRow(
@@ -1199,7 +1209,7 @@ fun SettingsScreen(
             }
         }
 
-        if (localMusicFolder != null && show(SettingsTab.LIBRARY)) SearchableSettingsGroup(search, header = stringResource(Res.string.local_music)) {
+        if (localMusicFolder != null && show(SettingsCategory.LOCAL_MUSIC)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.local_music) else null) {
             val localMusicFolderTitle = stringResource(Res.string.local_music_folder)
             row(localMusicFolderTitle, "folder", "offline", "files") {
                 SettingsRow(
@@ -1247,7 +1257,7 @@ fun SettingsScreen(
         val cacheLimitMb = if (cacheUnlimited) CACHE_UNLIMITED_STOP_MB else (cacheLimitBytes / (1024 * 1024)).toInt()
         val unlimitedLabel = stringResource(Res.string.song_cache_unlimited)
         val cacheLimitLabel = if (cacheUnlimited) unlimitedLabel else formatCacheSize(cacheLimitMb)
-        if (host.hasSongCache && show(SettingsTab.LIBRARY)) SearchableSettingsGroup(search, header = stringResource(Res.string.storage)) {
+        if (host.hasSongCache && show(SettingsCategory.STORAGE)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.storage) else null) {
             val showCacheFolderTitle = stringResource(Res.string.show_cache_folder)
             row(showCacheFolderTitle, "cache", "cached songs", "library", "folder") {
                 SettingsRow(
@@ -1309,7 +1319,7 @@ fun SettingsScreen(
         }
 
         // Only in a build that carries the watch app — see app/build.gradle.kts.
-        if (onWearOs != null && show(SettingsTab.CONNECTIONS)) {
+        if (onWearOs != null && show(SettingsCategory.CONNECTIONS)) {
             SearchableSettingsGroup(search) {
                 row(stringResource(Res.string.wear_os_section), "watch", "wear os", "galaxy watch", "pixel watch", "install") {
                     host.WearOsRow(onClick = onWearOs)
@@ -1317,7 +1327,7 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsTab.LIBRARY)) SearchableSettingsGroup(search, header = stringResource(Res.string.your_data)) {
+        if (show(SettingsCategory.YOUR_DATA)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.your_data) else null) {
             if (onOpenReplay != null) {
                 val replayTitle = stringResource(Res.string.replay)
                 row(replayTitle, "stats", "history", "wrapped") {
@@ -1376,7 +1386,7 @@ fun SettingsScreen(
 
         // No footer: it only restated the stop-on-close row's own subtitle,
         // which sits four rows above it and says the same thing in fewer words.
-        if (show(SettingsTab.PLAYBACK)) SearchableSettingsGroup(search, header = stringResource(Res.string.miscellaneous)) {
+        if (show(SettingsCategory.MISCELLANEOUS)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.miscellaneous) else null) {
             val playNextOnSwipeTitle = stringResource(Res.string.play_next_on_swipe)
             row(playNextOnSwipeTitle, "swipe", "queue") {
                 SettingsRow(
@@ -1518,7 +1528,7 @@ fun SettingsScreen(
             }
         }
 
-        if (onAppLanguage != null && show(SettingsTab.APP)) SearchableSettingsGroup(search, header = stringResource(Res.string.language)) {
+        if (onAppLanguage != null && show(SettingsCategory.LANGUAGE)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.language) else null) {
             val appLanguageTitle = stringResource(Res.string.app_language)
             row(appLanguageTitle, "locale", "translate") {
                 SettingsRow(
@@ -1530,7 +1540,7 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsTab.PLAYBACK)) SearchableSettingsGroup(search, header = stringResource(Res.string.advanced_options)) {
+        if (show(SettingsCategory.ADVANCED)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.advanced_options) else null) {
             val smartAlignmentTitle = stringResource(Res.string.smart_version_alignment)
             row(smartAlignmentTitle, "alignment", "sync", "waveform", "video", "audio", "skit", "intro", available = engineOptions) {
                 SettingsRow(
@@ -1577,13 +1587,13 @@ fun SettingsScreen(
 
         // Read after every group above has had its turn at the query, which is
         // what makes this an accurate "nothing here" rather than a guess.
-        if (!search.anyMatch) {
+        if (searching && !search.anyMatch) {
             MessageState(stringResource(Res.string.settings_search_empty, searchQuery))
         }
 
         // The version line is the page's colophon, not a setting: it belongs to
         // the whole list, so it goes when the list is narrowed to a few rows.
-        if (searchQuery.isBlank() && show(SettingsTab.APP)) {
+        if (category == null && !searching) {
         Text(
             text = buildAnnotatedString {
                 append("laya $version  ")

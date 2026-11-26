@@ -93,23 +93,30 @@ data class HomeLayout(
 ) {
     fun playlists(profile: String?): List<HomePlaylist> = playlistsByProfile[profile ?: "guest"].orEmpty()
 
+    fun isVisible(id: String, profile: String?): Boolean =
+        id !in hidden && (id != HomeSection.MY_PLAYLIST.id || playlists(profile).isNotEmpty())
+
     fun applyTo(feed: List<HomeShelf>, profile: String?): List<HomeShelf> {
+        val playlistId = HomeSection.MY_PLAYLIST.id
         val regular = feed.map { HomeSection.idFor(it) to it }
         val recents = regular.filter { it.first == HomeSection.RECENTS.id }.map { it.second }
-        val custom = playlists(profile).takeIf { it.isNotEmpty() }?.let {
-            HomeSection.MY_PLAYLIST.id to HomeShelf(HomeSection.MY_PLAYLIST.english, it.map(HomePlaylist::asCard))
+        val custom = playlists(profile).takeIf { isVisible(playlistId, profile) }?.let {
+            playlistId to HomeShelf(HomeSection.MY_PLAYLIST.english, it.map(HomePlaylist::asCard))
         }
         val positions = order.withIndex().associate { it.value to it.index }
         return recents + (regular + listOfNotNull(custom))
             .filterNot { it.first == HomeSection.RECENTS.id || it.first in hidden }
-            .sortedBy { positions[it.first] ?: Int.MAX_VALUE }
+            .sortedBy { positions[it.first] ?: if (it.first == playlistId) -1 else Int.MAX_VALUE }
             .map { it.second }
     }
 
     /** Newly seen recommendations follow the user's order and remain editable. */
-    fun editorOrder(feed: List<HomeShelf>): List<String> =
-        (order + feed.map(HomeSection::idFor) + HomeSection.entries.map { it.id } + hidden)
+    fun editorOrder(feed: List<HomeShelf>): List<String> {
+        val playlistId = HomeSection.MY_PLAYLIST.id
+        val initial = if (playlistId in order) order else listOf(playlistId) + order
+        return (initial + feed.map(HomeSection::idFor) + HomeSection.entries.map { it.id } + hidden)
             .distinct().filterNot { it == HomeSection.RECENTS.id }
+    }
 }
 
 object HomeLayoutPreferences {

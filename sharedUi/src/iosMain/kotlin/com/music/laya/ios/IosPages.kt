@@ -154,6 +154,7 @@ internal sealed interface IosPage {
     class Mood(val item: MoodGenre, val shelves: UiState<List<HomeShelf>>) : IosPage
     data object Customization : IosPage
     data object Settings : IosPage
+    data class SettingsSection(val category: com.music.laya.ui.screens.SettingsCategory) : IosPage
     data object HomeLayout : IosPage
     data object Account : IosPage
     data object Spotify : IosPage

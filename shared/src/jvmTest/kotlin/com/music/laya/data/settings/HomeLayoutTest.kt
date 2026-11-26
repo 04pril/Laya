@@ -6,11 +6,27 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class HomeLayoutTest {
     private val playlist = HomePlaylist("VLPLfav", "Favorites", null, "Playlist")
     private val feed = listOf("Quick picks", "Recents", "나를 위한 추천", "Artists on the rise")
         .map { HomeShelf(it, emptyList()) }
+
+    @Test
+    fun putsMyPlaylistFirstBelowRecentsByDefaultAndHidesItWhenEmpty() {
+        val id = HomeSection.MY_PLAYLIST.id
+        val layout = HomeLayout(order = listOf("QUICK_PICKS"))
+        assertEquals(id, layout.editorOrder(feed).first())
+        assertFalse(layout.isVisible(id, "account:main"))
+        assertEquals(listOf("Recents", "Quick picks", "나를 위한 추천", "Artists on the rise"),
+            layout.applyTo(feed, "account:main").map { it.title })
+        val filled = layout.copy(playlistsByProfile = mapOf("account:main" to listOf(playlist)))
+        assertTrue(filled.isVisible(id, "account:main"))
+        assertEquals(listOf("Recents", "My Playlist", "Quick picks", "나를 위한 추천", "Artists on the rise"),
+            filled.applyTo(feed, "account:main").map { it.title })
+        assertEquals("My Playlist", filled.applyTo(feed.filterNot { it.title == "Recents" }, "account:main").first().title)
+    }
 
     @Test
     fun keepsRecentsFixedAndMovesTheCustomShelfWithRecommendations() {

@@ -1063,31 +1063,36 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         profile = homePlaylistProfile,
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
                                     )
-                                    IosPage.Settings -> settingsState.SaveableStateProvider("settings") {
-                                        SettingsScreen(
-                                            windowWidth = this@BoxWithConstraints.maxWidth,
-                                            signedIn = signedIn,
-                                            account = account,
-                                            onSignIn = { loginGate = true },
-                                            onSignOut = { scope.launch { IosAuth.signOut() } },
-                                            contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
-                                            // Opens the account page; Last.fm / Spotify / Discord live behind it on Android (5e).
-                                            onEqualizer = { stack = stack + IosPage.Equalizer },
-                                            onOpenReplay = { replayLandingPage = ReplayStoryPage.INTRO; stack = stack + IosPage.Replay },
-                                            onSources = { stack = stack + IosPage.Sources },
-                                            onListenTogether = { stack = stack + IosPage.ListenTogether },
-                                            onAccountScrobbling = { stack = stack + IosPage.Account },
-                                            onSpotifyCanvasAuth = { stack = stack + IosPage.Account },
-                                            onEditSignatureApi = { editingSignatureApi = true },
-                                            onAppLanguage = { showLanguage = true },
-                                            onPlayerPreferences = { stack = stack + IosPage.Customization },
-                                            playerPreferencesSubtitle = iosText(
-                                                "가사, 하단 버튼, 다운로드 및 CarPlay",
-                                                "Lyrics, buttons, downloads and CarPlay",
-                                            ),
-                                            onHomeLayout = { stack = stack + IosPage.HomeLayout },
-                                            onProxySettings = { IosNative.host?.showProxy() },
-                                        )
+                                    IosPage.Settings, is IosPage.SettingsSection -> {
+                                        val category = (top as? IosPage.SettingsSection)?.category
+                                        settingsState.SaveableStateProvider(category?.name ?: "settings") {
+                                            SettingsScreen(
+                                                windowWidth = this@BoxWithConstraints.maxWidth,
+                                                signedIn = signedIn,
+                                                account = account,
+                                                onSignIn = { loginGate = true },
+                                                onSignOut = { scope.launch { IosAuth.signOut() } },
+                                                contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
+                                                // Opens the account page; Last.fm / Spotify / Discord live behind it on Android (5e).
+                                                onEqualizer = { stack = stack + IosPage.Equalizer },
+                                                onOpenReplay = { replayLandingPage = ReplayStoryPage.INTRO; stack = stack + IosPage.Replay },
+                                                onSources = { stack = stack + IosPage.Sources },
+                                                onListenTogether = { stack = stack + IosPage.ListenTogether },
+                                                onAccountScrobbling = { stack = stack + IosPage.Account },
+                                                onSpotifyCanvasAuth = { stack = stack + IosPage.Account },
+                                                onEditSignatureApi = { editingSignatureApi = true },
+                                                onAppLanguage = { showLanguage = true },
+                                                onPlayerPreferences = { stack = stack + IosPage.Customization },
+                                                playerPreferencesSubtitle = iosText(
+                                                    "가사, 하단 버튼, 다운로드 및 CarPlay",
+                                                    "Lyrics, buttons, downloads and CarPlay",
+                                                ),
+                                                onHomeLayout = { stack = stack + IosPage.HomeLayout },
+                                                onProxySettings = { IosNative.host?.showProxy() },
+                                                category = category,
+                                                onOpenCategory = { stack = stack + IosPage.SettingsSection(it) },
+                                            )
+                                        }
                                     }
                                     IosPage.Spotify -> SpotifyLibraryScreen(
                                         onOpenPlaylist = { openDetail(SPOTIFY_PAGE_PREFIX + it.id, it.name, it.owner ?: "Spotify", it.imageUrl, BrowseType.PLAYLIST) },

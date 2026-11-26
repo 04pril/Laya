@@ -803,9 +803,7 @@
     <string name="lossless_verify_rejected_notice">The server rejected the existing %1$s verification. Turn the source on again with the connection you want to use.</string>
     <string name="lossless_verify_restart">New verification</string>
     <string name="lossless_verified_until">Verified · until %1$s</string>
-    <string name="settings_tab_app">App</string>
-    <string name="settings_tab_home">Home</string>
-    <string name="settings_tab_connections">Connections</string>
+    <string name="settings_connections">Connections</string>
     <string name="home_sections">Home sections</string>
     <string name="home_sections_subtitle">Show, hide, and reorder the sections below Recents.</string>
     <string name="home_sections_recents_pinned">Recents stays at the top.</string>

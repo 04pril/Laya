@@ -119,8 +119,9 @@ fun HomeLayoutScreen(
                             Icon(Icons.Rounded.KeyboardArrowDown, stringResource(Res.string.home_move_section_down, title))
                         }
                         Switch(
-                            checked = id !in layout.hidden,
+                            checked = layout.isVisible(id, profile),
                             onCheckedChange = { HomeLayoutPreferences.setVisible(id, it) },
+                            enabled = section != HomeSection.MY_PLAYLIST || selected.isNotEmpty(),
                             modifier = Modifier.semantics { contentDescription = title },
                         )
                     }
