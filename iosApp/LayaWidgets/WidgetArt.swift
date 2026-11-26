@@ -69,72 +69,98 @@ enum WidgetArt {
     }
 
     static func poster(cover: UIImage?) -> UIImage? {
-        // Redrawn first, as BitChord's WidgetArt.downscaled does: the decoded JPEG straight from the App Group gave a
-        // wash whose blurred-cover layer came out empty, so only its two tint gradients showed, over the grey filler
-        // (a flat grey card where BitChord shows the cover's greens and teals).
-        guard let cover, let redrawn = opaqueCopy(cover), let input = CIImage(image: redrawn) else { return nil }
-        return posterWash(input, cover: redrawn)
+        guard let cover, let cg = cover.cgImage else { return nil }
+        return liquidWash(cg, accent: liquidAccent(from: cover))
     }
 
-    /// [image] drawn into a plain opaque bitmap at its pixel size (at most 720 px, as BitChord's maxPixels).
-    private static func opaqueCopy(_ image: UIImage) -> UIImage? {
-        let px = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
-        guard px.width > 0, px.height > 0 else { return nil }
-        let k = min(1, 720 / max(px.width, px.height))
-        let target = CGSize(width: (px.width * k).rounded(), height: (px.height * k).rounded())
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
-            image.draw(in: CGRect(origin: .zero, size: target))
+    /// Liquid Artwork, worked out on the CPU in plain 8-bit sRGB, as Android's ColorMediaWidget.colorSurface does:
+    /// the cover blurred on a 96 px grid (three box passes, radius 11 = 0.115 of the side), saturated 1.6x and
+    /// taken down 1.5 EV, then the accent glow from the top and the shade at the foot.
+    ///
+    /// Not Core Image. Through CIContext the blurred-cover layer came out empty in Laya's extension (the same code
+    /// works in BitChord's), so only the two gradients were left over the system's own widget background: grey in
+    /// one build, white in light mode and dark in dark mode in the next. Every pixel here is opaque.
+    static func liquidWash(_ cover: CGImage, accent: UIColor) -> UIImage? {
+        let n = 96
+        guard let srgb = CGColorSpace(name: CGColorSpace.sRGB) else { return nil }
+        var px = [UInt8](repeating: 0, count: n * n * 4)
+        let ok: Bool = px.withUnsafeMutableBytes { raw in
+            guard let small = CGContext(data: raw.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4,
+                                        space: srgb, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return false }
+            small.setFillColor(CGColor(srgbRed: 70 / 255, green: 75 / 255, blue: 80 / 255, alpha: 1))
+            small.fill(CGRect(x: 0, y: 0, width: n, height: n))
+            small.interpolationQuality = .high
+            small.draw(cover, in: CGRect(x: 0, y: 0, width: n, height: n))
+            return true
         }
+        guard ok else { return nil }
+        var channels = (0..<3).map { c in (0..<(n * n)).map { Int(px[$0 * 4 + c]) } }
+        for c in 0..<3 { for _ in 0..<3 { channels[c] = boxBlur(channels[c], n: n, radius: 11) } }
+        let gain = pow(2.0, -1.5)
+        for i in 0..<(n * n) {
+            let r = Double(channels[0][i]) / 255, g = Double(channels[1][i]) / 255, b = Double(channels[2][i]) / 255
+            let gray = r * 0.2126 + g * 0.7152 + b * 0.0722
+            for (c, v) in [r, g, b].enumerated() {
+                let saturated = min(max(gray + (v - gray) * 1.6, 0), 1)
+                px[i * 4 + c] = UInt8(min(max((pow(pow(saturated, 2.2) * gain, 1 / 2.2) * 255).rounded(), 0), 255))
+            }
+            px[i * 4 + 3] = 255
+        }
+        guard let provider = CGDataProvider(data: Data(px) as CFData),
+              let base = CGImage(width: n, height: n, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: n * 4, space: srgb,
+                                 bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue), provider: provider,
+                                 decode: nil, shouldInterpolate: true, intent: .defaultIntent) else { return nil }
+
+        let side = 360
+        let size = CGFloat(side)
+        guard let out = CGContext(data: nil, width: side, height: side, bitsPerComponent: 8, bytesPerRow: side * 4,
+                                  space: srgb, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue) else { return nil }
+        out.interpolationQuality = .high
+        out.draw(base, in: CGRect(x: 0, y: 0, width: size, height: size))
+        // Core Graphics' origin is the bottom left: the top of the card is y = size.
+        var ar: CGFloat = 0, ag: CGFloat = 0, ab: CGFloat = 0, aa: CGFloat = 0
+        accent.getRed(&ar, green: &ag, blue: &ab, alpha: &aa)
+        if aa > 0, let glow = CGGradient(colorsSpace: srgb, colors: [CGColor(srgbRed: ar, green: ag, blue: ab, alpha: 0.7),
+                                                                    CGColor(srgbRed: ar, green: ag, blue: ab, alpha: 0)] as CFArray,
+                                       locations: [0, 1]) {
+            let center = CGPoint(x: size * 0.58, y: size)
+            out.drawRadialGradient(glow, startCenter: center, startRadius: 0, endCenter: center, endRadius: size * 0.82,
+                                   options: .drawsBeforeStartLocation)
+        }
+        if let shade = CGGradient(colorsSpace: srgb, colors: [CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.25),
+                                                             CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)] as CFArray,
+                                  locations: [0, 1]) {
+            let center = CGPoint(x: size * 0.54, y: -size * 0.02)
+            out.drawRadialGradient(shade, startCenter: center, startRadius: 0, endCenter: center, endRadius: size * 0.80,
+                                   options: .drawsBeforeStartLocation)
+        }
+        return out.makeImage().map { UIImage(cgImage: $0) }
     }
 
-    /// Liquid Artwork: a blurred sleeve stretched across the card, a second sleeve hue
-    /// near the top, and a restrained dark foot behind the transport.
-    static func posterWash(_ input: CIImage, cover: UIImage) -> UIImage? {
-        let side = max(input.extent.width, input.extent.height)
-        let blur = CIFilter.gaussianBlur()
-        blur.inputImage = input.clampedToExtent()
-        blur.radius = Float(side * 0.115)
-        guard var output = blur.outputImage?.cropped(to: input.extent) else { return nil }
-        let controls = CIFilter.colorControls()
-        controls.inputImage = output
-        controls.saturation = 1.6
-        controls.brightness = 0
-        controls.contrast = 1.0
-        output = controls.outputImage?.cropped(to: input.extent) ?? output
-        let exposure = CIFilter.exposureAdjust()
-        exposure.inputImage = output
-        exposure.ev = -1.5
-        output = exposure.outputImage?.cropped(to: input.extent) ?? output
-        guard let cg = context.createCGImage(output, from: input.extent) else { return nil }
-        let base = UIImage(cgImage: cg)
-        let size = input.extent.size
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = true
-        return UIGraphicsImageRenderer(size: size, format: format).image { renderer in
-            base.draw(in: CGRect(origin: .zero, size: size))
-            let accent = liquidAccent(from: cover)
-            let colors = [accent.withAlphaComponent(0.7).cgColor, accent.withAlphaComponent(0).cgColor]
-            if accent.cgColor.alpha > 0,
-               let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors as CFArray, locations: [0, 1]) {
-                let center = CGPoint(x: size.width * 0.58, y: 0)
-                renderer.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
-                    endCenter: center, endRadius: size.width * 0.82, options: .drawsBeforeStartLocation)
-            }
-            let shadow = [UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.clear.cgColor]
-            if let gradient = CGGradient(colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: shadow as CFArray, locations: [0, 1]) {
-                let center = CGPoint(x: size.width * 0.54, y: size.height * 1.02)
-                renderer.cgContext.drawRadialGradient(gradient, startCenter: center, startRadius: 0,
-                    endCenter: center, endRadius: size.width * 0.80, options: .drawsBeforeStartLocation)
+    /// One box pass across each row and then each column, edges clamped (Android's MediaWidgetArt.boxPass).
+    private static func boxBlur(_ src: [Int], n: Int, radius: Int) -> [Int] {
+        let window = radius * 2 + 1
+        var rows = [Int](repeating: 0, count: n * n)
+        for y in 0..<n {
+            var sum = 0
+            for i in -radius...radius { sum += src[y * n + min(max(i, 0), n - 1)] }
+            for x in 0..<n {
+                rows[y * n + x] = sum / window
+                sum += src[y * n + min(x + radius + 1, n - 1)] - src[y * n + max(x - radius, 0)]
             }
         }
+        var cols = [Int](repeating: 0, count: n * n)
+        for x in 0..<n {
+            var sum = 0
+            for i in -radius...radius { sum += rows[min(max(i, 0), n - 1) * n + x] }
+            for y in 0..<n {
+                cols[y * n + x] = sum / window
+                sum += rows[min(y + radius + 1, n - 1) * n + x] - rows[max(y - radius, 0) * n + x]
+            }
+        }
+        return cols
     }
 
-    /// A second sleeve hue supplies the soft upper light, instead of amplifying its most
-    /// common colour into a flat saturated field. The tint is always read from this cover.
     private static func liquidAccent(from image: UIImage) -> UIColor {
         let side = 32
         var bytes = [UInt8](repeating: 0, count: side * side * 4)
