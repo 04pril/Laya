@@ -54,7 +54,7 @@ class LosslessSource(
         val stream = try {
             provider.stream(trackId)
         } catch (e: VerificationRequired) {
-            TrackLog.w(TAG, "${provider.label}: verification expired; verify again on the Sources screen")
+            TrackLog.w(TAG, "${provider.label}: verification required; check the Sources screen")
             return null
         } ?: return null
         if (stream.transport != null && !SourceRegistry.host.acceptTransport(stream.url, stream.transport)) return null

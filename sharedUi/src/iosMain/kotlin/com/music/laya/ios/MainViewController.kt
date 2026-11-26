@@ -9,6 +9,7 @@ import androidx.compose.ui.text.platform.Font
 import androidx.compose.ui.window.ComposeUIViewController
 import com.music.laya.sharedui.resources.Res
 import com.music.laya.sharedui.resources.lossless_verify_expired_notice
+import com.music.laya.sharedui.resources.lossless_verify_rejected_notice
 import com.music.laya.ui.theme.SFProDisplay
 import kotlinx.coroutines.runBlocking
 import coil3.ImageLoader
@@ -22,6 +23,7 @@ import com.music.laya.data.stats.ListeningStats
 import com.music.laya.data.TrackLog
 import com.music.laya.data.innertube.InnerTubeXResolver
 import com.music.laya.data.lyrics.LyricsTranslation
+import com.music.laya.data.sources.lossless.VerificationLoss
 import com.music.laya.ui.AppUi
 import com.music.laya.ui.player.PlayerPlatform
 import com.music.laya.ui.screens.SettingsExtras
@@ -94,7 +96,12 @@ fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: 
     com.music.laya.data.sources.lossless.LosslessProvider.all.forEach { it.session.reload() }
     SourceRegistry.init(IosSourcesHost)
     com.music.laya.data.sources.LosslessSource.watchExpiry(kotlinx.coroutines.MainScope()) { provider ->
-        IosPlayerHost.showMessage(org.jetbrains.compose.resources.getString(Res.string.lossless_verify_expired_notice, provider.label))
+        val notice = if (provider.session.verificationLoss.value == VerificationLoss.Rejected) {
+            Res.string.lossless_verify_rejected_notice
+        } else {
+            Res.string.lossless_verify_expired_notice
+        }
+        IosPlayerHost.showMessage(org.jetbrains.compose.resources.getString(notice, provider.label))
     }
     // Names only, in the order they are asked: addon addresses carry their owner's token.
     TrackLog.sourcesLine = {

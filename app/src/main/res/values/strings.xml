@@ -1254,8 +1254,12 @@
     <string name="lossless_verified_toast">%1$s verified</string>
     <string name="lossless_verify_failed">Verification failed</string>
     <string name="lossless_verify_unreachable">Verification service unreachable</string>
+    <string name="lossless_verify_proxy_unavailable">Could not connect the verification browser through the configured proxy. Check the connection settings and reopen Laya.</string>
     <string name="lossless_verify_expired_notice">%1$s verification expired. Turn it on again in Sources to keep lossless.</string>
     <string name="lossless_verify_expired">Verification expired · turn on again</string>
+    <string name="lossless_verify_rejected">Verification rejected · turn on again</string>
+    <string name="lossless_verify_rejected_notice">The server rejected the existing %1$s verification. Turn the source on again with the connection you want to use.</string>
+    <string name="lossless_verify_restart">New verification</string>
     <string name="lossless_verified_until">Verified · until %1$s</string>
     <string name="korean">한국어</string>
 </resources>
