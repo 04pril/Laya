@@ -4,6 +4,9 @@ import java.net.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class AppProxyRouteTest {
     @Test fun supportsNetworkRoutes() {
@@ -27,5 +30,28 @@ class AppProxyRouteTest {
     @Test fun corruptSavedRouteFailsClosed() {
         assertEquals("127.0.0.1", AppProxyRoute.FAIL_CLOSED.host)
         assertEquals(Proxy.Type.HTTP, AppProxyRoute.FAIL_CLOSED.javaProxy().type())
+    }
+
+    @Test fun proxyLoginIsValidatedAndNeverPrinted() {
+        val socks = AppProxyRoute(AppProxyKind.SOCKS5, "proxy.example", 1080, username = "user", password = "s3cret").validated()
+        assertTrue(socks.hasCredentials)
+        assertFalse("s3cret" in socks.toString())
+        for (route in listOf(
+            AppProxyRoute(AppProxyKind.SOCKS5, "proxy.example", 1080, password = "no user"),
+            AppProxyRoute(AppProxyKind.HTTP, "proxy.example", 8080, username = "a:b", password = "x"),
+            AppProxyRoute(AppProxyKind.WIREGUARD_LOCAL, "127.0.0.1", 8080, username = "u"),
+            AppProxyRoute(username = "u"),
+        )) assertFailsWith<IllegalArgumentException> { route.validated() }
+    }
+
+    @Test fun socksLoginAnswersOnlyThatProxyAndProtocol() {
+        val route = AppProxyRoute(AppProxyKind.SOCKS5, "proxy.example", 1080, username = "user", password = "s3cret")
+        val login = Http.socksLogin(route)
+        fun ask(host: String, protocol: String) = login.requestPasswordAuthenticationInstance(
+            host, null, 1080, protocol, "SOCKS authentication", null, null, java.net.Authenticator.RequestorType.SERVER)
+        assertEquals("user", ask("proxy.example", "SOCKS5")?.userName)
+        assertEquals("s3cret", ask("PROXY.example", "SOCKS5")?.password?.concatToString())
+        assertNull(ask("other.example", "SOCKS5"))
+        assertNull(ask("proxy.example", "http"))
     }
 }
