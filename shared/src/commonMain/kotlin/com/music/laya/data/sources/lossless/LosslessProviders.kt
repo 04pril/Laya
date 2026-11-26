@@ -135,6 +135,9 @@ sealed class LosslessProvider(val id: String, val label: String, appVersion: Str
                 bitDepth = data["bitDepth"]?.jsonPrimitive?.intOrNull,
             )
             if (!manifest.trimStart().startsWith("{")) {
+                LosslessStore.tidalPlaybackUrl?.invoke(manifest)?.let { url ->
+                    return LosslessStream(url = url, format = format)
+                }
                 val file = LosslessStore.manifestFile("tidal-$trackId.mpd", manifest) ?: run {
                     TrackLog.w(TAG, "Tidal: $trackId is a DASH manifest, which this player can't open; skipping")
                     return null

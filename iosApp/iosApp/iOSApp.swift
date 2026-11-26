@@ -13,6 +13,7 @@ struct iOSApp: App {
     private static let customization = CustomizationNative()
 
     init() {
+        TidalHlsServer.shared.start()
         IosNative.shared.host = Self.customization
         IosKaraoke.shared.native = KaraokeNativeImpl()
         IosAutomix.shared.native = AutomixNativeImpl()
@@ -43,9 +44,13 @@ struct iOSApp: App {
 struct ComposeView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UIViewController {
         let host = StatusBarHost()
-        host.embed(MainViewControllerKt.MainViewController(engine: iOSApp.audioEngine, cast: iOSApp.castNative, onStatusBarLight: { light in
-            host.light = light.boolValue
-        }))
+        host.embed(MainViewControllerKt.MainViewController(
+            engine: iOSApp.audioEngine, cast: iOSApp.castNative,
+            registerTidalHls: { playlist, segments in
+                TidalHlsServer.shared.register(playlist: playlist, segments: segments)
+            },
+            onStatusBarLight: { light in host.light = light.boolValue }
+        ))
         return host
     }
 

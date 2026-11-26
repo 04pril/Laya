@@ -265,6 +265,7 @@ import com.music.laya.ui.components.TopBarAccountButton
 import com.music.laya.ui.screens.SegmentedControl
 import com.music.laya.ui.components.SearchField
 import com.music.laya.sharedui.resources.Res as SharedRes
+import com.music.laya.sharedui.resources.home_sections
 import com.music.laya.sharedui.resources.player_preferences
 import com.music.laya.sharedui.resources.search_hint
 import com.music.laya.sharedui.resources.search_addons_hint
@@ -832,6 +833,7 @@ private fun LayaApp(
     val googleAccounts by viewModel.googleAccounts.collectAsStateWithLifecycle()
     val activeAccountId by viewModel.activeAccountId.collectAsStateWithLifecycle()
     val activeProfileId by viewModel.activeProfileId.collectAsStateWithLifecycle()
+    val homePlaylistProfile = activeAccountId?.takeIf { signedIn }?.let { "$it:${activeProfileId.orEmpty()}" }
     val historyState by viewModel.history.collectAsStateWithLifecycle()
     val lyrics by viewModel.lyrics.collectAsStateWithLifecycle()
     val lyricsSource by viewModel.lyricsSource.collectAsStateWithLifecycle()
@@ -3045,6 +3047,12 @@ private fun LayaApp(
                             )
                         } else if (pageRoute == AppRoute.PlayerPreferences) {
                             com.music.laya.ui.AndroidCustomizationSettings(contentPadding = listPadding)
+                        } else if (pageRoute == AppRoute.HomeLayout) {
+                            com.music.laya.ui.screens.HomeLayoutScreen(
+                                feed = (homeState as? UiState.Success)?.data.orEmpty(),
+                                profile = homePlaylistProfile,
+                                contentPadding = listPadding,
+                            )
                         } else if (pageRoute == AppRoute.Settings) {
                             SettingsScreen(
                                 windowWidth = windowWidth,
@@ -3071,6 +3079,8 @@ private fun LayaApp(
                                 onAppLanguage = { showAppLanguage = true },
                                 onEditSignatureApi = { editingSignatureApi = true },
                                 onPlayerPreferences = { navigator.push(AppRoute.PlayerPreferences) },
+                                onHomeLayout = { navigator.push(AppRoute.HomeLayout) },
+                                onProxySettings = { context.startActivity(Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java)) },
                                 contentPadding = listPadding,
                             )
                         } else if (page != null) {
@@ -3294,6 +3304,8 @@ private fun LayaApp(
                         } else when ((destination as? AppDestination.Tab)?.index ?: selectedTab) {
                             TAB_HOME -> HomeScreen(
                                 state = homeState,
+                                customizeSections = true,
+                                playlistProfile = homePlaylistProfile,
                                 listState = homeListState,
                                 currentSong = player.song,
                                 isPlaying = player.isPlaying,
@@ -3652,6 +3664,7 @@ private fun LayaApp(
                         AppRoute.WearOs -> stringResource(R.string.wear_os_page_title)
                         AppRoute.Equalizer -> stringResource(R.string.equalizer)
                         AppRoute.Settings -> stringResource(R.string.settings)
+                        AppRoute.HomeLayout -> org.jetbrains.compose.resources.stringResource(SharedRes.string.home_sections)
                         AppRoute.PlayerPreferences -> org.jetbrains.compose.resources.stringResource(SharedRes.string.player_preferences)
                         AppRoute.Replay -> stringResource(R.string.replay)
                         null -> when {

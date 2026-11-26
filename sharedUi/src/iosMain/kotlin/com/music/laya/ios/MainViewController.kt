@@ -39,13 +39,20 @@ import platform.Foundation.NSUserDefaults
 import platform.UIKit.UIViewController
 import com.music.laya.data.settings.AppSettings
 import com.music.laya.data.sources.SourceRegistry
+import com.music.laya.data.sources.lossless.DashAudio
+import com.music.laya.data.sources.lossless.LosslessStore
 import com.music.laya.data.settings.AppSettingsHost
 import com.russhwolf.settings.NSUserDefaultsSettings
 import kotlinx.coroutines.launch
 
 /** Entry point called from Swift: hosts the UI with the Swift-side AVFoundation [engine]; [onStatusBarLight] tells the host VC which status bar icon colour the screen needs. */
 @OptIn(ExperimentalComposeUiApi::class)
-fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: (Boolean) -> Unit): UIViewController {
+fun MainViewController(
+    engine: AudioEngine,
+    cast: CastNative,
+    registerTidalHls: (playlist: String, segments: List<String>) -> String?,
+    onStatusBarLight: (Boolean) -> Unit,
+): UIViewController {
     // Not NSLog: Kotlin strings passed through its C varargs crash (EXC_BAD_ACCESS).
     DebugLog.sink = DebugLog.Sink { level, tag, message, error -> println("$tag/$level: $message ${error ?: ""}") }
     TrackLog.echo = { level, tag, message, error -> println("$tag/$level: $message ${error ?: ""}") }
@@ -90,8 +97,14 @@ fun MainViewController(engine: AudioEngine, cast: CastNative, onStatusBarLight: 
     watchIosConnection()
     IosParty.install()
     com.music.laya.ui.screens.PartyPlatform.host = IosPartyPlatform
-    com.music.laya.data.sources.lossless.LosslessStore.read = { Keychain.get(it) }
-    com.music.laya.data.sources.lossless.LosslessStore.write = { key, value -> Keychain.set(key, value) }
+    LosslessStore.read = { Keychain.get(it) }
+    LosslessStore.write = { key, value -> Keychain.set(key, value) }
+    LosslessStore.tidalPlaybackUrl = { manifest ->
+        runCatching { DashAudio.parse(manifest, requireFlac = true) }.getOrNull()?.let { plan ->
+            val playlist = DashAudio.playlist(plan) { "segment-$it.m4s" }
+            registerTidalHls(playlist, listOf(plan.initialization) + plan.media)
+        }
+    }
     // A session that ran out while the app was closed is reported (and its source switched off) like any other.
     com.music.laya.data.sources.lossless.LosslessProvider.all.forEach { it.session.reload() }
     SourceRegistry.init(IosSourcesHost)

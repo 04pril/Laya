@@ -41,9 +41,12 @@ object LosslessStore {
 
     /**
      * Saves a DASH manifest the provider handed over as text and returns a URL the player can
-     * open it from, or null where the player can't play DASH (iOS) — the stream is passed over.
+     * open it from, or null where the player cannot play DASH directly.
      */
     var manifestFile: (name: String, mpd: String) -> String? = { _, _ -> null }
+
+    /** Optional platform bridge for Tidal DASH audio, returning an already playable URL. */
+    var tidalPlaybackUrl: ((mpd: String) -> String?)? = null
 }
 
 /** The broker wants its one-time browser check (a captcha) before it will answer. */

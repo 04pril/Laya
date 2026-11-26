@@ -36,6 +36,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Home
@@ -258,6 +259,10 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
     sheetMotion.flingVelocity = with(LocalDensity.current) { PLAYER_PULL_FLING_VELOCITY.toPx() }
     val signedIn by IosAuth.signedIn.collectAsState()
     val account by IosAuth.account.collectAsState()
+    val googleAccounts by IosAuth.accounts.collectAsState()
+    val activeGoogleAccountId by IosAuth.activeAccountId.collectAsState()
+    val homePlaylistProfile = googleAccounts.firstOrNull { signedIn && it.id == activeGoogleAccountId }
+        ?.let { "${it.id}:${it.activeProfile?.id.orEmpty()}" }
     var showLogin by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     var loginGate by remember { mutableStateOf(false) }
@@ -927,6 +932,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
     }
 
     val homeList = rememberLazyListState()
+    val settingsState = rememberSaveableStateHolder()
     val exploreList = rememberLazyListState()
     val libraryList = rememberLazyListState()
     val searchList = rememberLazyListState()
@@ -1052,35 +1058,37 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                         landingPage = replayLandingPage,
                                     )
                                     IosPage.Customization -> IosCustomizationScreen(barHeight)
-                                    IosPage.Settings -> SettingsScreen(
-                                        windowWidth = this@BoxWithConstraints.maxWidth,
-                                        signedIn = signedIn,
-                                        account = account,
-                                        onSignIn = { loginGate = true },
-                                        onSignOut = { scope.launch { IosAuth.signOut() } },
+                                    IosPage.HomeLayout -> com.music.laya.ui.screens.HomeLayoutScreen(
+                                        feed = (home as? UiState.Success)?.data.orEmpty(),
+                                        profile = homePlaylistProfile,
                                         contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
-                                        // Opens the account page; Last.fm / Spotify / Discord live behind it on Android (5e).
-                                        onEqualizer = { stack = stack + IosPage.Equalizer },
-                                        onOpenReplay = { replayLandingPage = ReplayStoryPage.INTRO; stack = stack + IosPage.Replay },
-                                        onSources = { stack = stack + IosPage.Sources },
-                                        onListenTogether = { stack = stack + IosPage.ListenTogether },
-                                        onAccountScrobbling = { stack = stack + IosPage.Account },
-                                        onSpotifyCanvasAuth = { stack = stack + IosPage.Account },
-                                        onEditSignatureApi = { editingSignatureApi = true },
-                                        onAppLanguage = { showLanguage = true },
-                                        customization = {
-                                            com.music.laya.ui.screens.SettingsGroup(header = iosText("사용자화", "Customization")) {
-                                                com.music.laya.ui.screens.SettingsRow(
-                                                    title = iosText("플레이어 및 편의 설정", "Player & preferences"),
-                                                    subtitle = iosText("가사, 하단 버튼, 다운로드 및 CarPlay", "Lyrics, buttons, downloads and CarPlay"),
-                                                    onClick = { stack = stack + IosPage.Customization })
-                                                com.music.laya.ui.screens.SettingsRow(
-                                                    title = iosText("WireGuard / 프록시", "WireGuard / proxy"),
-                                                    subtitle = "WireGuard · HTTP · HTTPS · SOCKS5",
-                                                    onClick = { IosNative.host?.showProxy() })
-                                            }
-                                        },
                                     )
+                                    IosPage.Settings -> settingsState.SaveableStateProvider("settings") {
+                                        SettingsScreen(
+                                            windowWidth = this@BoxWithConstraints.maxWidth,
+                                            signedIn = signedIn,
+                                            account = account,
+                                            onSignIn = { loginGate = true },
+                                            onSignOut = { scope.launch { IosAuth.signOut() } },
+                                            contentPadding = PaddingValues(top = 56.dp, bottom = barHeight),
+                                            // Opens the account page; Last.fm / Spotify / Discord live behind it on Android (5e).
+                                            onEqualizer = { stack = stack + IosPage.Equalizer },
+                                            onOpenReplay = { replayLandingPage = ReplayStoryPage.INTRO; stack = stack + IosPage.Replay },
+                                            onSources = { stack = stack + IosPage.Sources },
+                                            onListenTogether = { stack = stack + IosPage.ListenTogether },
+                                            onAccountScrobbling = { stack = stack + IosPage.Account },
+                                            onSpotifyCanvasAuth = { stack = stack + IosPage.Account },
+                                            onEditSignatureApi = { editingSignatureApi = true },
+                                            onAppLanguage = { showLanguage = true },
+                                            onPlayerPreferences = { stack = stack + IosPage.Customization },
+                                            playerPreferencesSubtitle = iosText(
+                                                "가사, 하단 버튼, 다운로드 및 CarPlay",
+                                                "Lyrics, buttons, downloads and CarPlay",
+                                            ),
+                                            onHomeLayout = { stack = stack + IosPage.HomeLayout },
+                                            onProxySettings = { IosNative.host?.showProxy() },
+                                        )
+                                    }
                                     IosPage.Spotify -> SpotifyLibraryScreen(
                                         onOpenPlaylist = { openDetail(SPOTIFY_PAGE_PREFIX + it.id, it.name, it.owner ?: "Spotify", it.imageUrl, BrowseType.PLAYLIST) },
                                         onOpenLogin = { showSpotifyLogin = true },
@@ -1145,6 +1153,8 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             }
                             0 -> HomeScreen(
                                 state = home,
+                                customizeSections = true,
+                                playlistProfile = homePlaylistProfile,
                                 listState = homeList,
                                 onItemClick = { item, shelfTitle ->
                                     // The tapped card plus the rest of its shelf's tracks as the queue.
@@ -1434,6 +1444,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                     if (showLanguage) IosLanguagePicker { showLanguage = false }
                     menuSong?.let { held ->
                         val pinnedOriginals by IosOriginalVersion.pinned.collectAsState()
+                        val logShareError = iosText("재생 로그를 공유할 수 없어요", "Could not share the playback log")
                         // As Android's menu: a row from search, recents or a feed is looked up as the menu opens.
                         var menuLinks by remember(held.videoId) { mutableStateOf<Song?>(null) }
                         LaunchedEffect(held.videoId) {
@@ -1474,6 +1485,11 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             upgradeInProgress = player.upgrading,
                             onCopyLog = if (nowPlayingOpen) ({
                                 scope.launch { IosPlayerHost.showMessage("Copied ${copyTrackLog(m)} log lines") }
+                            }) else null,
+                            onSharePlaybackLog = if (nowPlayingOpen && IosPlaybackLog.enabled) ({
+                                if (!sharePlaybackLog(player.playbackLog.report(m))) {
+                                    IosPlayerHost.showMessage(logShareError)
+                                }
                             }) else null,
                         )
                     }

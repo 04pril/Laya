@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
+
 package com.music.laya.ios
 
 import androidx.compose.foundation.clickable
@@ -26,7 +28,16 @@ import com.music.laya.data.YtMusicRepository
 import com.music.laya.data.compactCount
 import com.music.laya.data.model.Song
 import com.music.laya.data.model.UserPlaylist
+import com.music.laya.platform.currentTimeMillis
 import kotlinx.coroutines.launch
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSData
+import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSURL
+import platform.Foundation.create
+import platform.Foundation.writeToFile
+import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.usePinned
 import platform.UIKit.UIPasteboard
 
 /** Android's "Copy log": the same TrackLog export (header, NerdStats, the track's resolver/source/player lines) on the pasteboard. Returns the line count. */
@@ -34,6 +45,18 @@ internal suspend fun copyTrackLog(song: Song): Int {
     val text = TrackLog.forTrack(song, NerdStats.current.value)
     UIPasteboard.generalPasteboard.string = text
     return text.lines().count()
+}
+
+internal fun sharePlaybackLog(text: String): Boolean {
+    val path = NSTemporaryDirectory() + "Laya-playback-${currentTimeMillis()}.txt"
+    val bytes = text.encodeToByteArray()
+    if (bytes.isEmpty()) return false
+    val data = bytes.usePinned { NSData.create(bytes = it.addressOf(0), length = bytes.size.toULong()) }
+    if (!data.writeToFile(path, true)) return false
+    val cleanup: () -> Unit = { NSFileManager.defaultManager.removeItemAtPath(path, null) }
+    return presentShare(listOf(NSURL.fileURLWithPath(path)), onComplete = cleanup).also {
+        if (!it) cleanup()
+    }
 }
 
 @Composable

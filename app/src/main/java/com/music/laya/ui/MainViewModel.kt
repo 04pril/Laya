@@ -2723,7 +2723,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             val tracks = runCatching {
-                SpotifyLibrary.tracks(playlistId) { soFar ->
+                SpotifyLibrary.playableTracks(playlistId) { soFar ->
                     setSongs(UiState.Success(soFar.map { it.asPendingSong() }))
                 }
             }.getOrElse {

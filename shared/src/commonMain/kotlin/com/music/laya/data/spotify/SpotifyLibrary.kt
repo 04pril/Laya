@@ -19,6 +19,8 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import kotlin.concurrent.Volatile
+import kotlinx.coroutines.CancellationException
+import com.music.laya.data.settings.AppSettings
 
 /** A Spotify playlist's page id in the detail stack: this plus the playlist id (or [SpotifyLibrary.LIKED_ID]). */
 const val SPOTIFY_PAGE_PREFIX = "spotify:playlist:"
@@ -111,6 +113,43 @@ object SpotifyLibrary {
         collected
     }
 
+    /** Uses the active library account first, then the public playlist if that account cannot open it. */
+    suspend fun playableTracks(
+        playlistId: String,
+        onPage: (List<SpotifyTrack>) -> Unit = {},
+    ): List<SpotifyTrack> {
+        if (playlistId == LIKED_ID) return tracks(playlistId, onPage)
+        if (AppSettings.spotifySpdcToken.value.isNotBlank()) {
+            try {
+                return tracks(playlistId, onPage)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // The same playlist can still be available through its public page.
+            }
+        }
+        return SpotifyImporter.fetchPublicPlaylist(playlistId, includeTracks = true).tracks
+            .mapIndexed { index, track ->
+                SpotifyTrack("$playlistId-$index", track.title, track.artist, null, track.durationMs, null)
+            }.also(onPage)
+    }
+
+    suspend fun playlistForLink(playlistId: String): SpotifyPlaylist {
+        if (AppSettings.spotifySpdcToken.value.isNotBlank()) {
+            try {
+                val page = playlistOverview(playlistId)
+                page.str("name")?.takeIf { it.isNotBlank() }?.let {
+                    return SpotifyPlaylist(playlistId, it, "Spotify", largestSource(page.obj("images")))
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Public playlists can also be opened without a session.
+            }
+        }
+        return SpotifyImporter.fetchPublicPlaylist(playlistId).playlist
+    }
+
     private fun playlistPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyPlaylist>, Int, Int> {
         val variables = buildJsonObject {
             putJsonArray("filters") { add("Playlists") }
@@ -153,6 +192,10 @@ object SpotifyLibrary {
      */
     suspend fun cover(playlistId: String): String? = withContext(ioDispatcher) {
         if (playlistId == LIKED_ID) return@withContext LIKED_COVER
+        largestSource(playlistOverview(playlistId).obj("images"))
+    }
+
+    private suspend fun playlistOverview(playlistId: String): JsonObject = withContext(ioDispatcher) {
         val variables = buildJsonObject {
             put("uri", "spotify:playlist:$playlistId")
             put("offset", 0)
@@ -160,7 +203,7 @@ object SpotifyLibrary {
             put("enableWatchFeedEntrypoint", false)
         }
         val root = gql("fetchPlaylist", PLAYLIST, variables, authHeaders())
-        largestSource(root.obj("data")?.obj("playlistV2")?.obj("images"))
+        root.obj("data")?.obj("playlistV2") ?: error("Spotify playlist unavailable")
     }
 
     private fun likedPage(headers: Map<String, String>, offset: Int): Triple<List<SpotifyTrack>, Int, Int> {

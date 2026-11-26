@@ -65,6 +65,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     private var nowPlaying: [String: Any] = [:]
     private var artworkTask: URLSessionDataTask?
+    private var canvasTask: Task<Void, Never>?
+    private var nowPlayingTrackId: String?
+    private var canvasSource: URL?
 
     override init() {
         super.init()
@@ -239,11 +242,15 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         lastWatchedPosition = -1 // a seek back is not the tail replaying
         IosDsp.shared.reset()
         reportProgress()
-        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+        player.seek(to: time, toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self, weak item] finished in
             guard let self else { return }
             if self.seekingToMs == positionMs { self.seekingToMs = nil }
             if self.resumeAfterSeek { self.resumeAfterSeek = false; self.go() }
             print("AudioEngine: seek landed requested=\(Double(positionMs) / 1000)s currentTime=\(self.player.currentTime().seconds)s")
+            if LayaAppIdentity.scheme == "layatest", let item, item === self.currentItem {
+                self.listener?.onPlaybackDiagnostic(message:
+                    "seek completed=\(finished) requestedMs=\(positionMs) actualSeconds=\(item.currentTime().seconds)")
+            }
             self.reportProgress()
             self.updateNowPlayingTiming()
         }
@@ -276,6 +283,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     func dismissNowPlaying() {
         artworkTask?.cancel()
         artworkTask = nil
+        canvasTask?.cancel()
+        canvasTask = nil
+        canvasSource = nil
+        nowPlayingTrackId = nil
         nowPlaying.removeAll()
         nowPlayingSession.nowPlayingInfoCenter.nowPlayingInfo = nil
         nowPlayingSession.nowPlayingInfoCenter.playbackState = .stopped
@@ -329,8 +340,17 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if EqualizerTuning.wanted { [currentItem, nextItem].forEach { $0.map(EqualizerTap.attach) } }
     }
 
-    func setNowPlaying(title: String, artist: String, album: String?, artworkUrl: String?) {
+    func setNowPlaying(trackId: String, title: String, artist: String, album: String?, artworkUrl: String?) {
         artworkTask?.cancel()
+        let sameTrack = nowPlayingTrackId == trackId
+        let canvasKey: String?
+        if #available(iOS 26.0, *) { canvasKey = NowPlayingCanvas.key } else { canvasKey = nil }
+        let animated = sameTrack ? canvasKey.flatMap { nowPlaying[$0] } : nil
+        if !sameTrack {
+            canvasTask?.cancel()
+            canvasSource = nil
+        }
+        nowPlayingTrackId = trackId
         nowPlaying = [
             MPMediaItemPropertyTitle: title,
             MPMediaItemPropertyArtist: artist,
@@ -338,6 +358,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             MPNowPlayingInfoPropertyElapsedPlaybackTime: 0.0,
             MPNowPlayingInfoPropertyPlaybackRate: 0.0,
         ]
+        if let canvasKey, let animated { nowPlaying[canvasKey] = animated }
         if let album { nowPlaying[MPMediaItemPropertyAlbumTitle] = album }
         // Fill in duration/position/rate from the player right away: after an
         // automatic advance the new item is already ready, so no status change
@@ -355,6 +376,38 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             return
         }
         fetchArtwork(artworkUrl, letterboxed: false, expectedTitle: expectedTitle)
+    }
+
+    func supportsNowPlayingCanvas() -> Bool {
+        if #available(iOS 26.0, *) { return NowPlayingCanvas.key != nil }
+        return false
+    }
+
+    func setNowPlayingCanvas(trackId: String, clipUrl: String?) {
+        guard #available(iOS 26.0, *), let key = NowPlayingCanvas.key else { return }
+        onMain { [weak self] in
+            guard let self, trackId == self.nowPlayingTrackId else { return }
+            let remote = clipUrl.flatMap { URL(string: $0) }
+            guard remote != self.canvasSource else { return }
+            self.canvasTask?.cancel()
+            self.canvasSource = remote
+            self.nowPlaying.removeValue(forKey: key)
+            self.publishNowPlayingInfo()
+            guard let remote else { return }
+            self.canvasTask = Task { @MainActor [weak self] in
+                do {
+                    let cover = try await NowPlayingCanvas.artwork(from: remote, key: key)
+                    guard !Task.isCancelled, let self,
+                          self.nowPlayingTrackId == trackId, self.canvasSource == remote else { return }
+                    self.nowPlaying[key] = cover
+                    self.publishNowPlayingInfo()
+                } catch {
+                    if !Task.isCancelled, let self, self.canvasSource == remote, self.nowPlayingTrackId == trackId {
+                        self.canvasSource = nil
+                    }
+                }
+            }
+        }
     }
 
     /// The lock screen's cover, square as the app's own: a music video's 16:9 frame (hq720) is cut to its middle square.
@@ -434,6 +487,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 String(Int(session.ioBufferDuration * 1000))]
     }
 
+    func playbackDiagnostics(streamUrl: String?) -> [String] {
+        let state = YTMUWGStateDescription(YTMUWGCurrentState())
+        let kind = YTMUWGActiveKind()
+        let proxy = "app proxy: enabled=\(YTMUWGSettingEnabled()) mode=\(kind.isEmpty ? "none" : kind) state=\(state)"
+        guard let streamUrl, let url = URL(string: streamUrl) else { return [proxy] }
+        return [proxy] + TidalHlsServer.shared.diagnostics(for: url)
+    }
+
     /// The app's own level ("In-app volume"): each deck's volume is this times its own swap fade. Crossfades run in the taps.
     private var appGain: Float = 1
 
@@ -463,6 +524,12 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func makeItem(url: String, headers: [String: String], mimeType: String,
                           contentLength: Int64, chunkBytes: Int64) -> AVPlayerItem? {
         guard let source = URL(string: url) else { return nil }
+        if TidalHlsServer.shared.owns(source) {
+            let item = AVPlayerItem(url: source)
+            item.preferredForwardBufferDuration = 30
+            prepare(item)
+            return item
+        }
         // A downloaded or imported file: AVFoundation reads it directly.
         if source.isFileURL {
             let flac = (try? FileHandle(forReadingFrom: source))
@@ -538,6 +605,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
         let ns = item.error as NSError?
         let under = ns?.userInfo[NSUnderlyingErrorKey] as? NSError
+        if LayaAppIdentity.scheme == "layatest" {
+            listener?.onPlaybackDiagnostic(message:
+                "native playback error code=\(ns?.code ?? 0) underlyingCode=\(under?.code ?? 0) httpStatus=\(httpStatus)")
+        }
         let loader = loaders[ObjectIdentifier(item)]
         print("AudioEngine: item failed (free \(os_proc_available_memory() / 1_048_576) MB): \(message) [\(ns?.domain ?? "-") \(ns?.code ?? 0) / \(under?.domain ?? "-") \(under?.code ?? 0)] length=\(loader?.knownLength.map(String.init) ?? "?") mime=\(loader?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")")
         cancelFade()
@@ -1220,6 +1291,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             let error = note.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
             self.fail(item, message: error?.localizedDescription ?? "Playback stopped", httpStatus: 0)
         })
+        if LayaAppIdentity.scheme == "layatest" {
+            notificationTokens.append(center.addObserver(
+                forName: .AVPlayerItemPlaybackStalled, object: nil, queue: .main
+            ) { [weak self] note in
+                guard let self, let item = note.object as? AVPlayerItem, item === self.currentItem else { return }
+                self.listener?.onPlaybackDiagnostic(message: "AVPlayer stalled positionSeconds=\(item.currentTime().seconds)")
+            })
+        }
     }
 
     private func handleInterruption(_ note: Notification) {

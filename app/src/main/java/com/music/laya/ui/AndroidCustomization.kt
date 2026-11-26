@@ -74,11 +74,6 @@ internal fun AndroidCustomizationSettings(contentPadding: PaddingValues) {
         }
     }
     Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(contentPadding).padding(bottom = 24.dp)) {
-        SettingsGroup(header = androidText("연결", "Connection")) {
-            SettingsRow(title = androidText("WireGuard / 프록시 설정", "WireGuard / proxy settings"), onClick = {
-                context.startActivity(android.content.Intent(context, com.music.laya.proxy.AppProxySettingsActivity::class.java))
-            })
-        }
         SettingsGroup(header = androidText("플레이어", "Player")) {
             toggle("함께 듣기 버튼 숨기기", "Hide Listen Together button", "hide_party", Prefs.hideParty)
             RowDivider()

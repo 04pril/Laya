@@ -65,6 +65,8 @@ import coil3.compose.AsyncImage
 import com.music.laya.data.model.CARD_ART_PX
 import com.music.laya.data.model.HEADER_ART_PX
 import com.music.laya.data.model.HomeShelf
+import com.music.laya.data.settings.HomeLayoutPreferences
+import com.music.laya.data.settings.HomeSection
 import com.music.laya.data.model.ROW_ART_PX
 import com.music.laya.data.model.ShelfItem
 import com.music.laya.data.model.Song
@@ -92,7 +94,6 @@ import com.music.laya.ui.player.MeshPalette
 /** How far the Listen now heading and feed sit above the shared top inset. */
 private val HOME_TITLE_LIFT = 28.dp
 
-private const val RECENTS_TITLE = "Recents"
 private const val RECENT_TRACKS_PER_COLUMN = 4
 
 private fun List<ShelfItem>.playingItemMatcher(song: Song?): (ShelfItem) -> Boolean {
@@ -143,8 +144,13 @@ fun HomeScreen(
     leadHero: Boolean = true,
     currentSong: Song? = null,
     isPlaying: Boolean = false,
+    customizeSections: Boolean = false,
+    playlistProfile: String? = null,
 ) {
     val recentsViewType by AppUi.host.homeRecentsViewType.collectAsStateWithLifecycle()
+    val layout = if (customizeSections) HomeLayoutPreferences.layout.collectAsStateWithLifecycle().value else null
+    val feed = (state as? UiState.Success)?.data.orEmpty()
+    val shelves = remember(feed, layout, playlistProfile) { layout?.applyTo(feed, playlistProfile) ?: feed }
 
     PullToRefresh(
         refreshing = refreshing,
@@ -186,8 +192,12 @@ fun HomeScreen(
                         feedSkeleton(firstIsHero = leadHero)
                     }
                 }
-                is UiState.Error -> item {
-                    MessageState(state.message, actionLabel = stringResource(Res.string.retry), onAction = onRetry)
+                is UiState.Error -> {
+                    itemsIndexedShelves(shelves, onItemClick, onItemLongPress, currentSong, isPlaying,
+                        firstIsHero = false, recentsViewType = recentsViewType, onRecentsViewTypeToggle = {})
+                    item {
+                        MessageState(state.message, actionLabel = stringResource(Res.string.retry), onAction = onRetry)
+                    }
                 }
                 is UiState.Success -> {
                     if (recentlyPlayedLoading) {
@@ -197,7 +207,7 @@ fun HomeScreen(
                     // Recently Played lands, every real shelf must retain its
                     // compact-card layout instead of briefly becoming a hero.
                     itemsIndexedShelves(
-                        shelves = state.data,
+                        shelves = shelves,
                         onItemClick = onItemClick,
                         onItemLongPress = onItemLongPress,
                         currentSong = currentSong,
@@ -257,7 +267,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
     shelves.forEachIndexed { index, shelf ->
         item(key = shelf.title + index) {
             val openItem: (ShelfItem) -> Unit = { item -> onItemClick(item, shelf.title) }
-            if (index == 0 && shelf.title.equals(RECENTS_TITLE, ignoreCase = true)) {
+            if (index == 0 && HomeSection.idFor(shelf) == HomeSection.RECENTS.id) {
                 RecentShelf(
                     shelf = shelf,
                     onItemClick = openItem,
@@ -267,7 +277,7 @@ private fun androidx.compose.foundation.lazy.LazyListScope.itemsIndexedShelves(
                     viewType = recentsViewType,
                     onViewTypeToggle = onRecentsViewTypeToggle,
                 )
-            } else if (index == 0 && firstIsHero) {
+            } else if (index == 0 && firstIsHero && shelf.title != HomeSection.MY_PLAYLIST.english) {
                 HeroShelf(
                     shelf = shelf,
                     onItemClick = openItem,

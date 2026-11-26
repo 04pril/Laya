@@ -42,7 +42,9 @@ interface AudioEngine {
     /** Which effects need the audio tap: reverb / karaoke / spatial widening ([IosDsp]), and skip silence (Swift measures and speeds through the gap). */
     fun setEffects(dsp: Boolean, skipSilence: Boolean)
 
-    fun setNowPlaying(title: String, artist: String, album: String?, artworkUrl: String?)
+    fun setNowPlaying(trackId: String, title: String, artist: String, album: String?, artworkUrl: String?)
+    fun supportsNowPlayingCanvas(): Boolean
+    fun setNowPlayingCanvas(trackId: String, clipUrl: String?)
     fun setQueueCapabilities(hasNext: Boolean, hasPrevious: Boolean)
 
     /** The lock screen's Like / Favorite: offered only when [available] (signed in, an online YouTube track), filled when [liked]. */
@@ -57,6 +59,9 @@ interface AudioEngine {
 
     /** [portName, portType, sampleRateHz, outputChannels, ioBufferMs] of the audio session's current output route. */
     fun outputRoute(): List<String>
+
+    /** Shareable diagnostics for the associated stream, including network observations where available. */
+    fun playbackDiagnostics(streamUrl: String?): List<String>
 }
 
 interface AudioEngineListener {
@@ -67,6 +72,9 @@ interface AudioEngineListener {
 
     /** The current item's decoded format once it is ready (0 where unknown): [mimeType] in Media3's naming, e.g. audio/mp4a-latm. */
     fun onAudioFormat(mimeType: String?, sampleRateHz: Int, channels: Int, bitDepth: Int, bitrateKbps: Int)
+
+    /** Main thread. Only shareable fields such as a seek position or native error code. */
+    fun onPlaybackDiagnostic(message: String)
 
     /** [httpStatus] is the googlevideo status that caused it, or 0 when it was not an HTTP refusal. */
     fun onError(message: String, httpStatus: Int)

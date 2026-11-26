@@ -9,6 +9,7 @@ import com.music.laya.data.sources.TrackMatcher
 import com.music.laya.platform.HttpRequest
 import com.music.laya.platform.NetHttp
 import com.music.laya.platform.ioDispatcher
+import com.fleeksoft.ksoup.Ksoup
 import io.ktor.http.URLBuilder
 import io.ktor.http.Url
 import kotlinx.coroutines.async
@@ -20,6 +21,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -29,6 +31,7 @@ import kotlin.concurrent.atomics.AtomicInt
 data class SpotifyImportTrack(
     val title: String,
     val artist: String,
+    val durationMs: Int = 0,
 )
 
 /** The result of fetching and resolving a Spotify playlist's tracks. */
@@ -80,6 +83,11 @@ object SpotifyImporter {
      * Fetches public Spotify playlist details from Spotify's embed endpoint.
      */
     suspend fun fetchPlaylistTracks(playlistId: String): Pair<String, List<SpotifyImportTrack>> =
+        fetchPublicPlaylist(playlistId, includeTracks = true).let { it.playlist.name to it.tracks }
+
+    internal data class PublicPlaylist(val playlist: SpotifyPlaylist, val tracks: List<SpotifyImportTrack>)
+
+    internal suspend fun fetchPublicPlaylist(playlistId: String, includeTracks: Boolean = false): PublicPlaylist =
         withContext(ioDispatcher) {
             val url = "https://open.spotify.com/embed/playlist/$playlistId"
             val html = NetHttp.execute(HttpRequest(url, headers = mapOf("User-Agent" to USER_AGENT))).let { response ->
@@ -109,6 +117,14 @@ object SpotifyImporter {
             val playlistTitle = stateData["name"]?.jsonPrimitive?.content
                 ?: stateData["title"]?.jsonPrimitive?.content
                 ?: "Imported Spotify Playlist"
+            val images = (stateData["coverArt"] as? JsonObject)?.get("sources") as? JsonArray
+            val imageUrl = images.orEmpty().filterIsInstance<JsonObject>()
+                .maxByOrNull { it["width"]?.jsonPrimitive?.intOrNull ?: 0 }
+                ?.get("url")?.jsonPrimitive?.content?.takeIf { it.startsWith("https://") }
+                ?: if (includeTracks) null else Ksoup.parse(html).selectFirst("meta[property=og:image]")
+                    ?.attr("content")?.takeIf { it.startsWith("https://") }
+            val playlist = SpotifyPlaylist(playlistId, playlistTitle, "Spotify", imageUrl)
+            if (!includeTracks) return@withContext PublicPlaylist(playlist, emptyList())
 
             val trackListJson = stateData["trackList"]?.jsonArray
                 ?: stateData["tracks"]?.jsonArray
@@ -126,7 +142,8 @@ object SpotifyImporter {
                     }
                     ?: ""
                 if (title.isNotBlank()) {
-                    tracks.add(SpotifyImportTrack(title = title.trim(), artist = subtitle.trim()))
+                    val durationMs = obj["duration"]?.jsonPrimitive?.intOrNull ?: 0
+                    tracks.add(SpotifyImportTrack(title.trim(), subtitle.trim(), durationMs))
                 }
             }
 
@@ -149,7 +166,7 @@ object SpotifyImporter {
                 }
             }
 
-            Pair(playlistTitle, tracks)
+            PublicPlaylist(playlist, tracks)
         }
 
     /**
@@ -221,7 +238,8 @@ object SpotifyImporter {
                     ?.mapNotNull { it.jsonObject["profile"]?.jsonObject?.get("name")?.jsonPrimitive?.content }
                     ?.joinToString(", ")
                     .orEmpty()
-                out.add(SpotifyImportTrack(title = title, artist = artist))
+                val durationMs = (data["duration"] as? JsonObject)?.get("totalMilliseconds")?.jsonPrimitive?.intOrNull ?: 0
+                out.add(SpotifyImportTrack(title, artist, durationMs))
             }
             val total = content["totalCount"]?.jsonPrimitive?.content?.toIntOrNull() ?: break
             offset += items.size
