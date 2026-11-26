@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SF play.fill as the iOS WidgetPod card draws it (18x21 at 26 pt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="18dp" android:height="21dp" android:viewportWidth="18" android:viewportHeight="21">
+    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:strokeLineJoin="round" android:pathData="M2.2,2L16,10.5L2.2,19Z" />
+</vector>

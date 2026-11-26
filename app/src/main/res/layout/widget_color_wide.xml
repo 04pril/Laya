@@ -1,13 +1,53 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- The iOS WidgetPod card, by its own measurements (338x158 design units, see PosterWidgetViews): each piece sits at
+     the same fraction of the card through layout weights, and ColorMediaWidget pads color_box to that aspect and sets
+     the text and glyph sizes for the card's real size. The field is a stretched wash; the cover is its own view. -->
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/color_root" android:background="@drawable/widget_color_background" android:clipToOutline="true" android:layout_width="match_parent" android:layout_height="match_parent">
 <ImageView android:id="@+id/color_surface" android:layout_width="match_parent" android:layout_height="match_parent" android:scaleType="fitXY" android:contentDescription="@null" />
-<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal"><FrameLayout android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="0.45" /><FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0.55"><LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="12dp" android:gravity="center">
-<TextView android:id="@+id/color_title" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:gravity="center" android:maxLines="2" android:ellipsize="end" android:textColor="#ffffff" android:textSize="15sp" android:textStyle="bold" />
-<TextView android:id="@+id/color_artist" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#d9ffffff" android:textSize="13sp" />
-<LinearLayout android:layout_width="match_parent" android:layout_height="48dp" android:gravity="center" android:orientation="horizontal">
-<ImageButton android:id="@+id/color_previous" android:layout_width="0dp" android:layout_weight="1" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:src="@drawable/ic_widget_previous" android:background="@android:color/transparent" android:contentDescription="@string/widget_previous" />
-<ImageButton android:id="@+id/color_play" android:layout_width="0dp" android:layout_weight="1" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:src="@drawable/ic_widget_play" android:background="@android:color/transparent" android:contentDescription="@string/play" />
-<ImageButton android:id="@+id/color_next" android:layout_width="0dp" android:layout_weight="1" android:layout_height="44dp" android:padding="10dp" android:scaleType="fitCenter" android:src="@drawable/ic_widget_next" android:background="@android:color/transparent" android:contentDescription="@string/widget_next" />
-</LinearLayout></LinearLayout></FrameLayout></LinearLayout>
-<ImageView android:layout_width="22dp" android:layout_height="22dp" android:layout_gravity="top|end" android:layout_margin="12dp" android:src="@drawable/widget_music_glyph" android:tint="#fff5c4" android:contentDescription="@null" />
+<FrameLayout android:id="@+id/color_box" android:layout_width="match_parent" android:layout_height="match_parent">
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="11.25" />
+<LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="135.5" android:orientation="horizontal">
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="0" />
+<ImageView android:id="@+id/color_cover" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="158.5" android:scaleType="fitCenter" android:contentDescription="@null" />
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="179.5" />
+</LinearLayout>
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="11.25" />
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal">
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="169" />
+<LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="148" android:orientation="vertical">
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="128">
+<LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center" android:orientation="vertical">
+<TextView android:id="@+id/color_title" android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center" android:maxLines="2" android:ellipsize="end" android:fontFamily="sans-serif-medium" android:textColor="#ffffff" android:textSize="14dp" />
+<TextView android:id="@+id/color_artist" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="2dp" android:gravity="center" android:maxLines="1" android:ellipsize="end" android:textColor="#e0ffffff" android:textSize="13.5dp" />
+</LinearLayout>
+</FrameLayout>
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="30" />
+</LinearLayout>
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="21" />
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="100" />
+<LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="38" android:orientation="horizontal">
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="164" />
+<ImageButton android:id="@+id/color_previous" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="38" android:scaleType="fitCenter" android:src="@drawable/ic_pod_backward" android:background="@android:color/transparent" android:contentDescription="@string/widget_previous" />
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="22" />
+<ImageButton android:id="@+id/color_play" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="38" android:scaleType="fitCenter" android:src="@drawable/ic_pod_play" android:background="@android:color/transparent" android:contentDescription="@string/play" />
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="22" />
+<ImageButton android:id="@+id/color_next" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="38" android:scaleType="fitCenter" android:src="@drawable/ic_pod_forward" android:background="@android:color/transparent" android:contentDescription="@string/widget_next" />
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="16" />
+</LinearLayout>
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="20" />
+</LinearLayout>
+<LinearLayout android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical">
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="14" />
+<LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="22" android:orientation="horizontal">
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="301" />
+<ImageView android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="22" android:scaleType="fitCenter" android:src="@drawable/widget_music_glyph" android:tint="#fff5c4" android:contentDescription="@null" />
+<FrameLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="15" />
+</LinearLayout>
+<FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="122" />
+</LinearLayout>
+</FrameLayout>
 </FrameLayout>

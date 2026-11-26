@@ -15,6 +15,7 @@ import androidx.compose.animation.SharedTransitionScope
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Pause
 import androidx.compose.material.icons.rounded.PlayArrow
@@ -275,6 +277,85 @@ fun GlassNavBar(
             }
         }
     }
+}
+
+/**
+ * The tabs as a vertical glass column, for an unfolded Duo: placed in the side status column's strip, where
+ * BitChord's system tab bar sits on the same device, so the tabs never fold away under a scroll (#18).
+ * Same glyphs, tints, haptics and glass as [GlassNavBar]'s pill.
+ */
+@Composable
+fun GlassTabRail(
+    tabs: List<BottomTab>,
+    selectedIndex: Int,
+    onTabSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val pillShape = remember { RoundedCornerShape(percent = 50) }
+    val contentColor = glassContentColor()
+    val unselectedColor = contentColor.copy(alpha = 0.65f)
+    val indicator = glassIndicatorColor()
+    val haptics = rememberHaptics()
+    Column(
+        modifier.liquidGlass(shape = pillShape, surfaceTint = glassBarTint()).padding(vertical = 6.dp, horizontal = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        tabs.forEachIndexed { index, tab ->
+            val isSelected = index == selectedIndex
+            // The indicator and the tint ease between tabs rather than jumping.
+            val fill by animateColorAsState(if (isSelected) indicator else Color.Transparent, label = "railIndicator")
+            val tint by animateColorAsState(if (isSelected) contentColor else unselectedColor, label = "railTint")
+            Box(
+                Modifier.size(48.dp).clip(CircleShape).background(fill)
+                    .clickable {
+                        if (!isSelected) haptics.play(Haptic.Select)
+                        onTabSelected(index)
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(tab.icon, contentDescription = tab.label, tint = tint,
+                    modifier = Modifier.size(25.dp))
+            }
+        }
+    }
+}
+
+/** [GlassNavBar]'s expanded now playing pill on its own, for a layout whose tabs are in [GlassTabRail]. */
+@Composable
+fun GlassMiniPlayer(
+    song: Song,
+    isPlaying: Boolean,
+    isLoading: Boolean,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onExpand: () -> Unit,
+    controlsLocked: Boolean = false,
+    onBlockedControl: () -> Unit = {},
+    dock: PlayerDock? = null,
+    pull: MiniPlayerPull? = null,
+    onDismissPlayer: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
+) {
+    val pillShape = remember { RoundedCornerShape(percent = 50) }
+    GlassNowPlaying(
+        song = song,
+        isInline = false,
+        isPlaying = isPlaying,
+        isLoading = isLoading,
+        contentColor = glassContentColor(),
+        onPlayPause = onPlayPause,
+        onNext = onNext,
+        onPrevious = onPrevious,
+        onExpand = onExpand,
+        controlsLocked = controlsLocked,
+        onBlockedControl = onBlockedControl,
+        dock = dock,
+        pull = pull,
+        onDismissPlayer = onDismissPlayer,
+        modifier = modifier.windowInsetsPadding(floatingBarInsets).padding(horizontal = BAR_GUTTER).padding(bottom = 2.dp)
+            .fillMaxWidth().liquidGlass(shape = pillShape, surfaceTint = glassBarTint()),
+    )
 }
 
 /**

@@ -69,8 +69,25 @@ enum WidgetArt {
     }
 
     static func poster(cover: UIImage?) -> UIImage? {
-        guard let cover, let input = CIImage(image: cover) else { return nil }
-        return posterWash(input, cover: cover)
+        // Redrawn first, as BitChord's WidgetArt.downscaled does: the decoded JPEG straight from the App Group gave a
+        // wash whose blurred-cover layer came out empty, so only its two tint gradients showed, over the grey filler
+        // (a flat grey card where BitChord shows the cover's greens and teals).
+        guard let cover, let redrawn = opaqueCopy(cover), let input = CIImage(image: redrawn) else { return nil }
+        return posterWash(input, cover: redrawn)
+    }
+
+    /// [image] drawn into a plain opaque bitmap at its pixel size (at most 720 px, as BitChord's maxPixels).
+    private static func opaqueCopy(_ image: UIImage) -> UIImage? {
+        let px = CGSize(width: image.size.width * image.scale, height: image.size.height * image.scale)
+        guard px.width > 0, px.height > 0 else { return nil }
+        let k = min(1, 720 / max(px.width, px.height))
+        let target = CGSize(width: (px.width * k).rounded(), height: (px.height * k).rounded())
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1
+        format.opaque = true
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 
     /// Liquid Artwork: a blurred sleeve stretched across the card, a second sleeve hue

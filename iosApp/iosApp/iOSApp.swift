@@ -84,7 +84,12 @@ final class StatusBarHost: UIViewController {
             ?? view.safeAreaLayoutGuide.layoutFrame
         let frame = AdaptiveContentBounds.frame(in: view.bounds, safeFrame: safeFrame,
             isPhone: traitCollection.userInterfaceIdiom == .phone)
-        if content.view.frame != frame { content.view.frame = frame }
+        // Compose keeps the whole window and pads itself to `frame` (IosExpandedPhone), so it can draw its tabs in
+        // the status column's strip, as BitChord's system tab bar does there, instead of leaving it black (#18).
+        let bounds = view.bounds
+        IosExpandedPhone.shared.update(left: Double(frame.minX - bounds.minX), top: Double(frame.minY - bounds.minY),
+                                       right: Double(bounds.maxX - frame.maxX), bottom: Double(bounds.maxY - frame.maxY))
+        if content.view.frame != bounds { content.view.frame = bounds }
     }
 
     override func viewSafeAreaInsetsDidChange() {

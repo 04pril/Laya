@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SF backward.fill as the iOS WidgetPod card draws it (two rounded triangles, 24x12.6 at 18 pt). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="12.6dp" android:viewportWidth="24" android:viewportHeight="12.6">
+    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineJoin="round" android:pathData="M11.4,1.2L1.2,6.3L11.4,11.4Z" />
+    <path android:fillColor="#FFFFFFFF" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.6" android:strokeLineJoin="round" android:pathData="M22.8,1.2L12.6,6.3L22.8,11.4Z" />
+</vector>
