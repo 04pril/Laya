@@ -78,8 +78,57 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         observeSystemEvents()
         configureRemoteCommands()
         nowPlayingSession.becomeActiveIfPossible()
-        let watchdog = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in self?.checkStuckEnd() }
+        let watchdog = Timer(timeInterval: 0.5, repeats: true) { [weak self] _ in
+            Self.mainBeat.beat()
+            self?.checkStuckEnd()
+        }
         RunLoop.main.add(watchdog, forMode: .common)
+        Self.mainBeat.watch()
+    }
+
+    /// Notices the main thread not answering: the half-second timer above beats on it, and a background timer reads
+    /// the beat. A stall over two seconds is logged as it starts and with its length when it ends, so "did the app
+    /// freeze?" has an answer in Copy log (the scene-update watchdog kills at ten seconds).
+    private static let mainBeat = MainBeat()
+
+    private final class MainBeat {
+        private let lock = NSLock()
+        private var last = CACurrentMediaTime()
+        private var stalledSince: CFTimeInterval?
+        private var timer: DispatchSourceTimer?
+
+        func beat() {
+            lock.lock()
+            let now = CACurrentMediaTime()
+            let ended = stalledSince.map { now - $0 }
+            stalledSince = nil
+            last = now
+            lock.unlock()
+            if let ended { nativeLog(String(format: "AudioEngine: main thread answered again after %.1f s", ended), warn: true) }
+        }
+
+        func watch() {
+            let timer = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
+            timer.schedule(deadline: .now() + 1, repeating: 1)
+            timer.setEventHandler { [weak self] in self?.check() }
+            timer.resume()
+            self.timer = timer
+        }
+
+        private var lastCheck = CACurrentMediaTime()
+
+        private func check() {
+            lock.lock()
+            let now = CACurrentMediaTime()
+            // This timer late too: the whole process was suspended (backgrounded with nothing playing), not main stuck.
+            if now - lastCheck > 2.5 { last = now; stalledSince = nil }
+            lastCheck = now
+            let silent = now - last
+            let starting = silent > 2 && stalledSince == nil
+            if starting { stalledSince = last }
+            lock.unlock()
+            if starting { nativeLog(String(format: "AudioEngine: main thread not answering for %.1f s", silent), warn: true) }
+        }
     }
 
     private func observeDeck(_ deck: AVQueuePlayer) {
@@ -187,11 +236,20 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     func play(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
-        onMain { self.playOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes) }
+        let asked = CACurrentMediaTime()
+        onMain { self.playOnMain(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes, asked: asked) }
     }
 
-    private func playOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64) {
+    private func playOnMain(url: String, headers: [String: String], mimeType: String, contentLength: Int64, chunkBytes: Int64,
+                            asked: CFTimeInterval) {
+        // Where a start spends its time before AVPlayer has the item: a Tidal fallback once took 6.9 s between Kotlin
+        // handing the track over and the engine starting it, with nothing logged in between.
+        var stages: [(String, CFTimeInterval)] = []
+        var mark = CACurrentMediaTime()
+        func lap(_ name: String) { let now = CACurrentMediaTime(); stages.append((name, now - mark)); mark = now }
+        stages.append(("waited for main", mark - asked))
         stop()
+        lap("stop")
         IosDsp.shared.reset()
         setSkipping(false)
         guard let item = makeItem(url: url, headers: headers, mimeType: mimeType,
@@ -199,9 +257,18 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             listener?.onError(message: "Bad stream URL", httpStatus: 0)
             return
         }
+        lap("make item")
         activateSession()
+        lap("audio session")
         becomeCurrent(item)
         player.insert(item, after: nil)
+        lap("queue")
+        let total = CACurrentMediaTime() - asked
+        if total > 0.5 {
+            let parts = stages.filter { $0.1 > 0.05 }.map { String(format: "%@ %.0f ms", $0.0, $0.1 * 1000) }
+            nativeLog(String(format: "AudioEngine: starting the track took %.0f ms before AVPlayer had it (%@)", total * 1000,
+                             parts.joined(separator: ", ")), warn: true)
+        }
         startAskedAt = CACurrentMediaTime()
         startupWaitingReason = nil
         startupCheckpointLogged = false
