@@ -11,15 +11,15 @@ import com.russhwolf.settings.Settings
  * Qobuz's file of LOVE ATTACK sends one byte and drops the connection, every time: each play spent ten seconds on it
  * before falling over to Tidal. Two lengths of memory:
  *
- * - [record]: any failure in the player, for a day, in memory. A relaunch forgets it, so a passing failure (a dead
- *   proxy, a rate limit) costs nothing beyond the session.
+ * - [record]: any failure in the player, for an hour, in memory. A dead proxy or a rate limit fails every track tried
+ *   meanwhile, and iOS can keep a playing app alive for days, so this stays short: the source is tried again soon.
  * - [keep]: a failure proven to be the source's own: the stream never started there, and another source then played
  *   the same track (so the network was fine). Written to the app's settings and kept for two days across launches.
  *
  * Another source's failure, or another track, is unaffected.
  */
 object PlaybackFailures {
-    private const val SESSION_TTL_MS = 24 * 60 * 60 * 1000L
+    private const val SESSION_TTL_MS = 60 * 60 * 1000L
     private const val KEPT_TTL_MS = 2 * 24 * 60 * 60 * 1000L
     private const val MAX_ENTRIES = 256
     private const val KEY = "playback_failures_v1"
@@ -43,7 +43,7 @@ object PlaybackFailures {
         }
     }
 
-    /** [configId] could not play [target] in the player. Skipped for that track for the rest of the day. */
+    /** [configId] could not play [target] in the player. Skipped for that track for an hour. */
     fun record(configId: String, target: TrackMatcher.Target) {
         val key = keyOf(target) ?: return
         if (failed.size >= MAX_ENTRIES) failed.clear()
