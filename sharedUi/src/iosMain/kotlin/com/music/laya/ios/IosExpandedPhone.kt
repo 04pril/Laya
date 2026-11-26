@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
  * the side strip, where BitChord's system tab bar sits on the same device.
  */
 object IosExpandedPhone {
-    class Insets(val left: Double, val top: Double, val right: Double, val bottom: Double) {
+    class Insets(val left: Double, val top: Double, val right: Double, val bottom: Double, val unfolded: Boolean = false) {
         /**
          * The Duo's status column: a wide inset on one side only, folded or open, either way up. An ordinary
          * iPhone has no side inset upright and an even pair on its side (the notch and the home side), so it
@@ -30,10 +30,11 @@ object IosExpandedPhone {
     val insets = mutableStateOf(Insets(0.0, 0.0, 0.0, 0.0))
 
     /** From StatusBarHost on every layout of an iPhone: the window's safe insets, in points; zeros elsewhere. */
-    fun update(left: Double, top: Double, right: Double, bottom: Double) {
+    /** [unfolded]: the window's short side is 600 pt or more (the Duo open; folded it is a phone-sized screen). */
+    fun update(left: Double, top: Double, right: Double, bottom: Double, unfolded: Boolean) {
         val now = insets.value
-        if (now.left != left || now.top != top || now.right != right || now.bottom != bottom) {
-            insets.value = Insets(left, top, right, bottom)
+        if (now.left != left || now.top != top || now.right != right || now.bottom != bottom || now.unfolded != unfolded) {
+            insets.value = Insets(left, top, right, bottom, unfolded)
         }
     }
 }

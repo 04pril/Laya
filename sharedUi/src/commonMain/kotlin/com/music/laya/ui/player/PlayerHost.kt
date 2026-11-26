@@ -138,6 +138,9 @@ interface PlayerHost {
     /** An unfolded phone (iPhone Duo): wide like a tablet, but nearly square and with a side status column. */
     val isExpandedPhone: Boolean get() = false
 
+    /** [isExpandedPhone] and open: the player keeps its sleeve-beside-controls shape either way up. */
+    val isUnfoldedPhone: Boolean get() = false
+
     val hasNativeOutputGlyph: Boolean get() = false
 
     @Composable
