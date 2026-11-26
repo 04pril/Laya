@@ -90,10 +90,6 @@ final class StreamCache {
         private var skip: Int64 = 0
         private var attempt = 0
         private var progressed = false
-        /// The partial file was thrown away once because it would not resume (see retry); never twice.
-        private var restartedFromZero = false
-        /// A remainder this small is cheaper to fetch again than to keep retrying a resume of.
-        private static let cheapRestartBytes: Int64 = 1 << 20
         private var connections = 0
         private static let retryDelays: [Double] = [0.5, 1, 2, 4]
         private static let throttleDelays: [Double] = [1, 2, 4, 8, 16]
@@ -237,24 +233,6 @@ final class StreamCache {
             task = nil
             let delays = status == 429 ? Self.throttleDelays : Self.retryDelays
             if progressed { attempt = 0 }
-            // A partial file that will not resume: asking from its end keeps breaking before a byte arrives. Seen on
-            // Qobuz's CDN with 1 byte left by an earlier run: every "bytes=1-" dropped (-1005) until the entry gave up
-            // and the track never played, while the same CDN served "bytes=0-" for other tracks. Start over from the
-            // first byte, once per entry: at once for a small remainder, after two failed resumes for a large one.
-            let written = state.written
-            if !progressed, written > 0, !restartedFromZero, status != 429, wfd >= 0,
-               written < Self.cheapRestartBytes || attempt >= 2 {
-                restartedFromZero = true
-                lock.lock()
-                let truncated = ftruncate(wfd, 0) == 0 // O_APPEND: the next write lands at the new end, byte 0
-                if truncated { _written = 0 }
-                lock.unlock()
-                if truncated {
-                    nativeLog("StreamCache[\(id)]: \(written) bytes would not resume (HTTP \(status)); starting over from 0", warn: true)
-                    attempt = 0
-                    return cache.queue.async { self.startIfNeeded() }
-                }
-            }
             guard attempt < delays.count else { return fail(status == 0 ? NSURLErrorNetworkConnectionLost : status) }
             let delay = max(delays[attempt], retryAfter)
             attempt += 1

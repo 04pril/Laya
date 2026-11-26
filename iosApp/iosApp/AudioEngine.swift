@@ -667,9 +667,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 // Only the playing item's refusal is actionable; a queued one is
                 // re-resolved by Kotlin when it becomes current and fails.
                 guard let self, let item else { return }
-                // Below 100 it is not an HTTP status but a connection error code (NSURLError*), the download's give-up.
-                self.fail(item, message: status >= 100 ? "Stream refused (HTTP \(status))" : "Stream failed (\(status))",
-                          httpStatus: Int32(status))
+                self.fail(item, message: "Stream refused (HTTP \(status))", httpStatus: Int32(status))
             }
         }
         loaders[ObjectIdentifier(item)] = loader
