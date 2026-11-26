@@ -164,6 +164,9 @@ enum class SettingsCategory(val title: org.jetbrains.compose.resources.StringRes
     ADVANCED(Res.string.advanced_options, Icons.Rounded.Tune),
 }
 
+/** Shown as rows on the main settings page, not as pages of their own: each holds one or a few rows. */
+private val inlineCategories = setOf(SettingsCategory.CONNECTIONS, SettingsCategory.DOWNLOADS, SettingsCategory.LANGUAGE)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
@@ -303,7 +306,8 @@ fun SettingsScreen(
     // time the query changes.
     val searching = category == null && searchQuery.isNotBlank()
     val search = SettingsSearch(if (searching) searchQuery else "")
-    fun show(group: SettingsCategory) = searching || category == group
+    // A category of one or two rows is shown on the main page itself rather than as a page to open.
+    fun show(group: SettingsCategory) = searching || category == group || (category == null && group in inlineCategories)
 
     // What is left after a keystroke is a different list, and the offset the
     // last one was scrolled to means nothing in it.
@@ -464,15 +468,15 @@ fun SettingsScreen(
             if (!searching) {
                 val categories = SettingsCategory.entries.filter {
                     when (it) {
-                        // Proxy and account moved up to the second group; what is left here is Listen Together and Wear OS.
-                        SettingsCategory.CONNECTIONS -> onListenTogether != null || onWearOs != null
                         // Every row it had now sits in the second group above.
                         SettingsCategory.AUDIO_QUALITY -> false
-                        SettingsCategory.DOWNLOADS -> host.hasDownloads
+                        // Its rows sit on this page below the list.
+                        in inlineCategories -> false
+                        // Smart alignment is the only row left (Detailed audio info moved to Appearance).
+                        SettingsCategory.ADVANCED -> engineOptions
                         SettingsCategory.PERFORMANCE -> refreshRates != null
                         SettingsCategory.LOCAL_MUSIC -> localMusicFolder != null
                         SettingsCategory.STORAGE -> host.hasSongCache
-                        SettingsCategory.LANGUAGE -> onAppLanguage != null
                         else -> true
                     }
                 }
@@ -485,7 +489,7 @@ fun SettingsScreen(
             }
         }
 
-        if (show(SettingsCategory.CONNECTIONS)) SearchableSettingsGroup(search) {
+        if (onListenTogether != null && show(SettingsCategory.CONNECTIONS)) SearchableSettingsGroup(search) {
             // Sits with the account rather than with Playback: a party is up to
             // five signed-in people, and being signed in is the whole of what
             // the row needs before it will do anything.
@@ -510,7 +514,7 @@ fun SettingsScreen(
         // does this minute cost"; these answer "what am I keeping, and when may
         // it be fetched" — and those two questions only make sense read
         // together, which is what puts them side by side here.
-        if (host.hasDownloads && show(SettingsCategory.DOWNLOADS)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.downloads) else null) {
+        if (host.hasDownloads && show(SettingsCategory.DOWNLOADS)) SearchableSettingsGroup(search, header = if (searching || category == null) stringResource(Res.string.downloads) else null) {
             val downloadQualityTitle = stringResource(Res.string.download_quality)
             row(downloadQualityTitle, "offline", "lossless") {
                 SettingsRow(
@@ -1148,6 +1152,26 @@ fun SettingsScreen(
                     }
                 }
             }
+            // What the player shows about the stream: read as a display option, not an experiment.
+            val showNerdStatsTitle = stringResource(Res.string.show_nerd_stats)
+            row(showNerdStatsTitle, "debug", "bitrate", "codec") {
+                SettingsRow(
+                    icon = Icons.Rounded.BarChart,
+                    title = showNerdStatsTitle,
+                    subtitle = stringResource(Res.string.show_nerd_stats_subtitle),
+                    trailing = {
+                        Switch(
+                            checked = nerdStats,
+                            onCheckedChange = AppSettings::setShowNerdStats,
+                            colors = SwitchDefaults.colors(
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
+                                checkedBorderColor = MaterialTheme.colorScheme.primary,
+                            ),
+                        )
+                    },
+                    onClick = { AppSettings.setShowNerdStats(!nerdStats) },
+                )
+            }
         }
 
         if (refreshRates != null && show(SettingsCategory.PERFORMANCE)) SearchableSettingsGroup(search, header = if (searching) stringResource(Res.string.performance) else null) {
@@ -1560,25 +1584,10 @@ fun SettingsScreen(
                     onClick = { AppSettings.setSmartVersionAlignment(!smartVersionAlignment) },
                 )
             }
-            val showNerdStatsTitle = stringResource(Res.string.show_nerd_stats)
-            row(showNerdStatsTitle, "debug", "bitrate", "codec") {
-                SettingsRow(
-                    icon = Icons.Rounded.BarChart,
-                    title = showNerdStatsTitle,
-                    subtitle = stringResource(Res.string.show_nerd_stats_subtitle),
-                    trailing = {
-                        Switch(
-                            checked = nerdStats,
-                            onCheckedChange = AppSettings::setShowNerdStats,
-                            colors = SwitchDefaults.colors(
-                                checkedTrackColor = MaterialTheme.colorScheme.primary,
-                                checkedBorderColor = MaterialTheme.colorScheme.primary,
-                            ),
-                        )
-                    },
-                    onClick = { AppSettings.setShowNerdStats(!nerdStats) },
-                )
-            }
+        }
+
+        // Its own row at the foot of the main page, as it used to be: a choice made once, not an advanced option.
+        if (host.appIconRow != null && (searching || category == null)) SearchableSettingsGroup(search) {
             host.appIconRow?.let { appIconRow ->
                 val appIconTitle = stringResource(Res.string.app_icon)
                 row(appIconTitle, "icon", "launcher", "logo") { appIconRow() }
