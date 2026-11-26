@@ -62,7 +62,10 @@ internal fun TabletPlayerLayout(
     Box(modifier.fillMaxSize()) {
         background(Modifier.fillMaxSize())
         BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing.union(stableStatusBarInsets()))) {
-            if (maxHeight > maxWidth) {
+            // Clearly tall only. An unfolded Duo is close to square, and once its side status column is taken off the
+            // width it read as portrait: the sleeve went on top of a stacked deck where it used to sit beside the
+            // controls (#18). iPad portrait (4:3 and taller) stays portrait.
+            if (maxHeight > maxWidth * 1.15f) {
                 PortraitTabletPlayer(pane, artwork, actions, mainPane, portraitHeader, lyricsPane, queuePane)
                 return@BoxWithConstraints
             }
