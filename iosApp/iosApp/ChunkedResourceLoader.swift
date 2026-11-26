@@ -150,9 +150,10 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     }
 
     private func fetch(_ loadingRequest: AVAssetResourceLoadingRequest, from start: Int64, end: Int64, attempt: Int = 0) {
-        if streaming { return stream(loadingRequest, from: start, end: end, attempt: attempt) }
         let key = ObjectIdentifier(loadingRequest)
+        // Before the streaming branch: a request arriving after cancelAll must not acquire a StreamCache entry it never releases.
         if invalidated || cancelled.contains(key) || loadingRequest.isCancelled { return }
+        if streaming { return stream(loadingRequest, from: start, end: end, attempt: attempt) }
         if start > end {
             loadingRequest.finishLoading()
             tasks.removeValue(forKey: key)

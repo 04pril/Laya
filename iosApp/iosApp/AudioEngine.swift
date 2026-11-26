@@ -271,6 +271,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         reopening = nil
         resumeAfterSeek = false
         pausedByInterruption = false
+        failedItems.removeAll()
     }
 
     func dismissNowPlaying() {
@@ -619,6 +620,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     private func prepare(_ item: AVPlayerItem) {
+        // A new item may sit at the address of one that failed and was freed: it has not failed itself.
+        failedItems.remove(ObjectIdentifier(item))
         item.audioTimePitchAlgorithm = .spectral
         if EqualizerTuning.wanted { EqualizerTap.attach(to: item) }
     }

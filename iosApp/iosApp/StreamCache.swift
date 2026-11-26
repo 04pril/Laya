@@ -80,11 +80,13 @@ final class StreamCache {
         private var refs = 0
         private var waiters: [Int: (need: Int64, queue: DispatchQueue, block: () -> Void)] = [:]
         private var nextToken = 0
+        /// Opened on demand and closed once nobody holds the entry, so idle entries don't pin descriptors. Guarded by `lock`.
+        private var rfd: Int32 = -1
         // Cache queue only.
         private var session: URLSession?
         private var task: URLSessionDataTask?
+        /// Opened when a download starts, closed when the entry goes idle.
         private var wfd: Int32 = -1
-        private var rfd: Int32 = -1
         private var skip: Int64 = 0
         private var attempt = 0
         private var progressed = false
@@ -95,11 +97,11 @@ final class StreamCache {
         fileprivate init(cache: StreamCache, url: URL, headers: [String: String], path: URL, id: String) {
             self.cache = cache; self.url = url; self.headers = headers; self.path = path; self.id = id
             super.init()
-            FileManager.default.createFile(atPath: path.path, contents: nil) // keeps what a previous run left
-            wfd = open(path.path, O_WRONLY | O_APPEND)
-            rfd = open(path.path, O_RDONLY)
+            if !FileManager.default.fileExists(atPath: path.path) {
+                FileManager.default.createFile(atPath: path.path, contents: nil)
+            } // else keeps what a previous run left
             var st = stat()
-            if fstat(rfd, &st) == 0 { _written = Int64(st.st_size) }
+            if stat(path.path, &st) == 0 { _written = Int64(st.st_size) }
         }
 
         deinit { if wfd >= 0 { close(wfd) }; if rfd >= 0 { close(rfd) } }
@@ -114,10 +116,16 @@ final class StreamCache {
 
         /// Up to [count] bytes at [offset] that are on disk now (fewer, or none, when the download has not got there).
         func read(at offset: Int64, count: Int) -> Data {
-            let n = Int(max(0, min(Int64(count), state.written - offset)))
-            guard n > 0, rfd >= 0 else { return Data() }
+            lock.lock(); defer { lock.unlock() }
+            let n = Int(max(0, min(Int64(count), _written - offset)))
+            guard n > 0 else { return Data() }
+            if rfd < 0 { rfd = open(path.path, O_RDONLY) }
+            guard rfd >= 0 else { return Data() }
             var data = Data(count: n)
-            let got = data.withUnsafeMutableBytes { pread(rfd, $0.baseAddress, n, off_t(offset)) }
+            let fd = rfd
+            let got = data.withUnsafeMutableBytes { pread(fd, $0.baseAddress, n, off_t(offset)) }
+            // A peek at an idle entry (isCompleteFlac) leaves nothing open behind it.
+            if refs <= 0 { close(rfd); rfd = -1 }
             return got > 0 ? data.prefix(got) : Data()
         }
 
@@ -139,15 +147,33 @@ final class StreamCache {
         func cancelWait(_ token: Int) { lock.lock(); waiters[token] = nil; lock.unlock() }
 
         fileprivate func retain() {
-            lock.lock(); refs += 1; lock.unlock()
+            lock.lock()
+            refs += 1
+            // A new reader gets a fresh try: an earlier give-up (a dropped network, an expired link) must not fail this
+            // URL for the rest of the run. Cleared here, under the lock, before the caller's first look at `state`.
+            let retry = _status != 0 && !_complete
+            if retry { _status = 0 }
+            lock.unlock()
             try? FileManager.default.setAttributes([.modificationDate: Date()], ofItemAtPath: path.path)
-            cache.queue.async { self.startIfNeeded() }
+            cache.queue.async {
+                if retry { self.attempt = 0 }
+                self.startIfNeeded()
+            }
         }
 
         func release() {
             lock.lock(); refs -= 1; let idle = refs <= 0; lock.unlock()
-            // Nobody reads: stop downloading (the file stays; the next reader resumes from its end).
-            if idle { cache.queue.async { self.task?.cancel(); self.task = nil } }
+            // Nobody reads: stop downloading and let go of the file (it stays; the next reader resumes from its end).
+            guard idle else { return }
+            cache.queue.async {
+                self.lock.lock()
+                let stillIdle = self.refs <= 0
+                if stillIdle, self.rfd >= 0 { close(self.rfd); self.rfd = -1 }
+                self.lock.unlock()
+                guard stillIdle else { return } // re-acquired meanwhile
+                self.task?.cancel(); self.task = nil
+                if self.wfd >= 0 { close(self.wfd); self.wfd = -1 }
+            }
         }
 
         private func wake() {
@@ -165,6 +191,8 @@ final class StreamCache {
             lock.lock(); let held = refs > 0; lock.unlock()
             guard held, task == nil, !s.complete, s.status == 0 else { return }
             if let length = s.length, s.written >= length { return finish() }
+            if wfd < 0 { wfd = open(path.path, O_WRONLY | O_APPEND | O_CREAT, 0o644) }
+            guard wfd >= 0 else { return fail(NSURLErrorCannotWriteToFile) }
             if session == nil {
                 let config = URLSessionConfiguration.default
                 config.timeoutIntervalForRequest = 20
