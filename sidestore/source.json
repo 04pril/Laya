@@ -2,10 +2,10 @@
   "name": "Laya iOS · 04pril",
   "identifier": "com.music.laya.04pril.source",
   "subtitle": "한국어·프록시·가사 사용자화·위젯을 추가한 Laya iOS.",
-  "description": "04pril/laya-iOS의 정식 릴리즈를 배포하는 AltStore Classic / SideStore 소스입니다. Laya 원작: impin2rex.",
-  "iconURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
-  "website": "https://github.com/04pril/laya-iOS",
-  "sourceURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/sidestore/source.json",
+  "description": "04pril/Laya의 iOS 정식 릴리즈를 배포하는 AltStore Classic / SideStore 소스입니다. Laya 원작: impin2rex.",
+  "iconURL": "https://raw.githubusercontent.com/04pril/Laya/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+  "website": "https://github.com/04pril/Laya",
+  "sourceURL": "https://raw.githubusercontent.com/04pril/Laya/main/sidestore/source.json",
   "tintColor": "#000000",
   "apps": [
     {
@@ -14,7 +14,7 @@
       "developerName": "04pril · Laya by impin2rex",
       "subtitle": "한국어·프록시·가사 사용자화·위젯",
       "localizedDescription": "Laya iOS에 한국어, 앱 내부 프록시, 가사 사용자화와 BitChord의 커스텀 위젯을 더했습니다.",
-      "iconURL": "https://raw.githubusercontent.com/04pril/laya-iOS/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
+      "iconURL": "https://raw.githubusercontent.com/04pril/Laya/main/iosApp/iosApp/Assets.xcassets/AppIcon.appiconset/AppIcon.png",
       "tintColor": "#000000",
       "category": "entertainment",
       "screenshots": [],
@@ -24,7 +24,7 @@
           "buildVersion": "64",
           "date": "2026-11-26T10:55:39Z",
           "localizedDescription": "- 무손실 다운로드에서 Tidal이 선택되면 FLAC 음원을 `.m4a` 파일로 저장하고 FLAC 배지를 표시합니다.\n\n\n- 상세 음원 정보 표시는 화면 설정 맨 아래로 옮겼습니다.\n- 함께 듣기, 다운로드, 언어 설정은 설정 첫 화면에서 바로 열 수 있습니다. 앱 아이콘은 첫 화면 맨 아래에 따로 배치했습니다.\n- 고급 옵션은 지원하는 플랫폼에서 표시됩니다.\n\n실제 Tidal 음원의 오프라인 재생과 탐색은 iPhone에서 확인이 남아 있습니다.",
-          "downloadURL": "https://github.com/04pril/laya-iOS/releases/download/ios-v1.9.7/Laya-1.9.7.ipa",
+          "downloadURL": "https://github.com/04pril/Laya/releases/download/ios-v1.9.7/Laya-1.9.7.ipa",
           "size": 91222344,
           "minOSVersion": "17.0"
         },
@@ -33,7 +33,7 @@
           "buildVersion": "63",
           "date": "2026-11-25T10:56:22Z",
           "localizedDescription": "- AAC 재생 준비 중 무손실 음원이 먼저 도착했을 때, 현재 항목이 준비되면 무손실 음원으로 전환하도록 수정했습니다.\n- 앱 프록시 설정에 뮤직비디오와 앱 내부의 움직이는 앨범 커버 영상은 iOS 재생기가 직접 받아 앱 프록시를 거치지 않는다고 안내합니다.",
-          "downloadURL": "https://github.com/04pril/laya-iOS/releases/download/ios-v1.9.6/Laya-1.9.6.ipa",
+          "downloadURL": "https://github.com/04pril/Laya/releases/download/ios-v1.9.6/Laya-1.9.6.ipa",
           "size": 91214674,
           "minOSVersion": "17.0"
         }
