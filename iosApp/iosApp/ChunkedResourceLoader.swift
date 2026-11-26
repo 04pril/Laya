@@ -8,8 +8,8 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
 
     let queue = DispatchQueue(label: "laya.resource-loader")
     let proxyURL: URL
-    var onHTTPError: ((Int) -> Void)?
-    private(set) var reportedHTTPError = false
+    private var onTerminalFailure: ((Int) -> Void)?
+    private var terminalFailure: Int?
     /// The stream's size once a response has stated it (or the caller knew it).
     var streamLength: Int64? { knownLength }
     /// FLAC's STREAMINFO as read from the bytes actually served, set when the first chunk lands.
@@ -89,12 +89,31 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         }
     }
 
+    func observeTerminalFailure(_ observer: @escaping (Int) -> Void) {
+        queue.async {
+            guard !self.invalidated else { return }
+            self.onTerminalFailure = observer
+            self.notifyRecordedTerminalFailure()
+        }
+    }
+
+    /// A queued item may become current after the engine ignored its first failure notification.
+    func replayTerminalFailure() {
+        queue.async { self.notifyRecordedTerminalFailure() }
+    }
+
+    private func notifyRecordedTerminalFailure() {
+        guard !invalidated, let status = terminalFailure else { return }
+        onTerminalFailure?(status)
+    }
+
     func resourceLoader(
         _ resourceLoader: AVAssetResourceLoader,
         shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest
     ) -> Bool {
         let key = ObjectIdentifier(loadingRequest)
         cancelled.remove(key)
+        startupTrace?.record(loadingRequest)
 
         if let info = loadingRequest.contentInformationRequest {
             info.contentType = uti(for: mimeType)
@@ -127,6 +146,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     ) {
         let key = ObjectIdentifier(loadingRequest)
         cancelled.insert(key)
+        startupTrace?.cancelled += 1
         tasks.removeValue(forKey: key)?.cancel()
         if let s = serves.removeValue(forKey: key), let t = s.token { entry?.cancelWait(t) }
     }
@@ -159,8 +179,59 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private let createdAt = ProcessInfo.processInfo.systemUptime
     private var firstBytesLogged = false
     private var deliveredTotal = 0
+    private var startupTrace: StartupTrace? = StartupTrace()
     /// A range slower than this is worth a line: a slow start without any failure leaves no other trace.
     private static let slowRangeSec = 4.0
+
+    /// Counts every request on the loader queue, keeping only the first and last six for the log.
+    private struct StartupTrace {
+        var requests = 0
+        var withMetadata = 0
+        var cancelled = 0
+        var httpStarted = 0
+        var httpCompleted = 0
+        var httpTotalMs = 0
+        var httpMaxMs = 0
+        var first: [String] = []
+        var latest: [String] = []
+
+        mutating func record(_ request: AVAssetResourceLoadingRequest) {
+            requests += 1
+            let metadata = request.contentInformationRequest != nil
+            if metadata { withMetadata += 1 }
+            let sample: String
+            if let data = request.dataRequest {
+                let length = data.requestsAllDataToEndOfResource ? "EOF" : String(data.requestedLength)
+                sample = "#\(requests) \(data.requestedOffset)+\(length)\(metadata ? " info" : "")"
+            } else {
+                sample = "#\(requests) info-only"
+            }
+            if first.count < 6 {
+                first.append(sample)
+            } else {
+                if latest.count == 6 { latest.removeFirst() }
+                latest.append(sample)
+            }
+        }
+
+        mutating func completeHTTP(after seconds: Double) {
+            let ms = Int(seconds * 1000)
+            httpCompleted += 1
+            httpTotalMs += ms
+            httpMaxMs = max(httpMaxMs, ms)
+        }
+    }
+
+    func logStartupRequests(phase: String, elapsedMs: Int, waitingReason: String, final: Bool) {
+        queue.async {
+            guard let trace = self.startupTrace else { return }
+            if final { self.startupTrace = nil }
+            let samples = (trace.first + trace.latest).joined(separator: ", ")
+            let mode = self.streaming ? "stream cache" : "HTTP ranges"
+            nativeLog("Loader startup: \(phase) at \(elapsedMs) ms, waiting=\(waitingReason), mode=\(mode), avRequests=\(trace.requests) metadata=\(trace.withMetadata) cancelled=\(trace.cancelled) deliveredBytes=\(self.deliveredTotal), httpStarted=\(trace.httpStarted) httpCompleted=\(trace.httpCompleted) httpTotalMs=\(trace.httpTotalMs) httpMaxMs=\(trace.httpMaxMs); AV samples: [\(samples)]",
+                      warn: !final)
+        }
+    }
 
     /// Logs when the player first had real audio to work with (past AVFoundation's few-byte type probe), which is how
     /// long the start waited on the network, and any slow range after. Queue only.
@@ -205,8 +276,10 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
 
         let began = ProcessInfo.processInfo.systemUptime
+        startupTrace?.httpStarted += 1
         let task = session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
+            let networkSeconds = ProcessInfo.processInfo.systemUptime - began
             var error = error
             var injected: Int?
             if start > 2_000_000, Self.injectedFailures > 0 {
@@ -216,6 +289,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                 print("Loader: injected failure at \(start) (attempt \(attempt))")
             }
             self.queue.async {
+                self.startupTrace?.completeHTTP(after: networkSeconds)
                 if self.cancelled.contains(key) || loadingRequest.isCancelled { return }
                 if let error {
                     let ns = error as NSError
@@ -232,10 +306,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     self.noteFailure("HTTP \(status) at \(start)")
                     if status == 429 || status >= 500 || status == 0,
                        self.retry(loadingRequest, from: start, end: end, attempt: attempt) { return }
-                    if [403, 404, 410].contains(status), !self.reportedHTTPError {
-                        self.reportedHTTPError = true
-                        self.onHTTPError?(status)
-                    }
+                    if [403, 404, 410].contains(status) { self.reportTerminalFailure(status) }
                     loadingRequest.finishLoading(with: NSError(
                         domain: "Laya", code: status,
                         userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]
@@ -313,9 +384,12 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             s.request.contentInformationRequest?.contentLength = length
             s.end = min(s.end, length - 1)
         }
+        if s.request.contentInformationRequest != nil, knownLength == nil, !st.complete {
+            if st.status != 0 { return fail(s, st.status) }
+            return waitFor(s, entry, need: nil)
+        }
         let refused = st.status != 0 && st.written <= s.next
         if refused { return fail(s, st.status) }
-        guard s.request.contentInformationRequest == nil || knownLength != nil || st.complete else { return waitFor(s, entry, need: 1) }
         guard let data = s.request.dataRequest else { return finish(s) } // only the type-and-length ask
         let from = s.next
         while s.next <= s.end {
@@ -333,17 +407,21 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         waitFor(s, entry, need: s.next + 1)
     }
 
-    private func waitFor(_ s: Serve, _ entry: StreamCache.Entry, need: Int64) {
+    private func waitFor(_ s: Serve, _ entry: StreamCache.Entry, need: Int64?) {
         s.token = entry.wait(for: need, on: queue) { [weak self, weak s] in if let self, let s { self.pump(s) } }
     }
 
     private func fail(_ s: Serve, _ status: Int) {
-        noteFailure("stream HTTP \(status) at \(s.next)")
-        if [403, 404, 410].contains(status), !reportedHTTPError {
-            reportedHTTPError = true
-            onHTTPError?(status)
-        }
-        finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: "HTTP \(status)"]))
+        let reason = status > 0 ? "HTTP \(status)" : "transport code \(status)"
+        noteFailure("stream \(reason) at \(s.next)")
+        reportTerminalFailure(status)
+        finish(s, error: NSError(domain: "Laya", code: status, userInfo: [NSLocalizedDescriptionKey: reason]))
+    }
+
+    private func reportTerminalFailure(_ status: Int) {
+        guard terminalFailure == nil else { return }
+        terminalFailure = status
+        notifyRecordedTerminalFailure()
     }
 
     private func releaseStreaming() {

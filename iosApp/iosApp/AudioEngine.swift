@@ -122,6 +122,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     /// When play() was asked, until the first sound: how long a start took, for "Copy log".
     private var startAskedAt: CFTimeInterval?
+    private var startupWaitingReason: String?
+    private var startupCheckpointLogged = false
     /// When the playing deck ran dry mid-track, until it plays again.
     private var stalledAt: CFTimeInterval?
 
@@ -133,19 +135,43 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             if let asked = startAskedAt {
                 startAskedAt = nil
                 nativeLog(String(format: "AudioEngine: first sound %.0f ms after play", (now - asked) * 1000))
+                currentItem.flatMap { loaders[ObjectIdentifier($0)] }?
+                    .logStartupRequests(phase: "playing", elapsedMs: Int((now - asked) * 1000),
+                                        waitingReason: startupWaitingReason ?? "none reported", final: true)
             } else if let since = stalledAt {
                 stalledAt = nil
                 nativeLog(String(format: "AudioEngine: playing again after a %.1f s stall", now - since), warn: true)
             }
         case .waitingToPlayAtSpecifiedRate:
-            // Ran out of audio mid-track; a start still waiting for its first sound is covered by the line above.
-            guard startAskedAt == nil, stalledAt == nil, seekingToMs == nil, deck.reasonForWaitingToPlay == .toMinimizeStalls else { return }
+            if let asked = startAskedAt {
+                recordStartupWait(deck, elapsedMs: Int((now - asked) * 1000))
+                return
+            }
+            guard stalledAt == nil, seekingToMs == nil, deck.reasonForWaitingToPlay == .toMinimizeStalls else { return }
             stalledAt = now
             let at = deck.currentTime().seconds
             nativeLog("AudioEngine: stalled at \(at.isFinite ? String(format: "%.1f", at) : "?")s, waiting for data", warn: true)
         default:
             stalledAt = nil // paused: a stall that ends in a pause is not timed
         }
+    }
+
+    private func recordStartupWait(_ deck: AVQueuePlayer, elapsedMs: Int) {
+        let reason = deck.reasonForWaitingToPlay?.rawValue ?? "unspecified"
+        guard startupWaitingReason != reason else { return }
+        startupWaitingReason = reason
+        nativeLog("AudioEngine: startup waiting at \(elapsedMs) ms, reason=\(reason)")
+    }
+
+    private func logStartupCheckpoint() {
+        guard let asked = startAskedAt, let item = currentItem,
+              player.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+        let elapsedMs = Int((CACurrentMediaTime() - asked) * 1000)
+        recordStartupWait(player, elapsedMs: elapsedMs)
+        guard elapsedMs >= 10_000, !startupCheckpointLogged else { return }
+        startupCheckpointLogged = true
+        loaders[ObjectIdentifier(item)]?.logStartupRequests(phase: "still waiting", elapsedMs: elapsedMs,
+                                                            waitingReason: startupWaitingReason ?? "unspecified", final: false)
     }
 
     // MARK: - AudioEngine
@@ -177,6 +203,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         becomeCurrent(item)
         player.insert(item, after: nil)
         startAskedAt = CACurrentMediaTime()
+        startupWaitingReason = nil
+        startupCheckpointLogged = false
         stalledAt = nil
         go()
     }
@@ -662,12 +690,11 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     private func adopt(_ loader: ChunkedResourceLoader, for item: AVPlayerItem) {
-        loader.onHTTPError = { [weak self, weak item] status in
+        loader.observeTerminalFailure { [weak self, weak item] status in
             DispatchQueue.main.async {
-                // Only the playing item's refusal is actionable; a queued one is
-                // re-resolved by Kotlin when it becomes current and fails.
                 guard let self, let item else { return }
-                self.fail(item, message: "Stream refused (HTTP \(status))", httpStatus: Int32(status))
+                let message = status > 0 ? "Stream failed (HTTP \(status))" : "Stream failed (transport code \(status))"
+                self.fail(item, message: message, httpStatus: status > 0 ? Int32(status) : 0)
             }
         }
         loaders[ObjectIdentifier(item)] = loader
@@ -682,6 +709,11 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // the real end arrives as a failure. That is the track ending, not breaking: move on rather than retry it.
         if atStatedEnd(item) { return endByHint(item) }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
+        if let asked = startAskedAt {
+            startAskedAt = nil
+            loaders[ObjectIdentifier(item)]?.logStartupRequests(phase: "failed", elapsedMs: Int((CACurrentMediaTime() - asked) * 1000),
+                                                                waitingReason: startupWaitingReason ?? "none reported", final: true)
+        }
         let detail = failureDetail(item, reportedError: reportedError)
         if LayaAppIdentity.scheme == "layatest" {
             let ns = item.error as NSError?
@@ -728,6 +760,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// clock has reached its end but that AVPlayer never ends (it misjudged the length and waits for bytes that don't
     /// exist, or keeps replaying its tail) is ended here. Any source; the stated length (dur=) is handled in reportProgress.
     private func checkStuckEnd() {
+        logStartupCheckpoint()
         materializeNextIfDue()
         // A FLAC seeked while it downloaded plays from AVFoundation's estimate: once the file is in, reopen it where the
         // timeline (and the lyrics) say it is, so the audio comes back to them.
@@ -795,6 +828,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// Point the status observation and the end/fail notifications at [item].
     private func becomeCurrent(_ item: AVPlayerItem) {
         currentItem = item
+        // The loader dispatches back to main, after the caller reports the queue advance to Kotlin.
+        loaders[ObjectIdentifier(item)]?.replayTerminalFailure()
         lastWatchedPosition = -1
         stuckAt = -1
         EqualizerTuning.dspKey = UnsafeRawPointer(Unmanaged.passUnretained(item).toOpaque())
