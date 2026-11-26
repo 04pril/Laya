@@ -1354,12 +1354,18 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             )
                         }
                             SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).padding(bottom = barHeight))
-                            if (stack.isEmpty()) {
+                            if (top == null) {
+                                // On a Duo the pages run under the status column, and its clock sat over the account
+                                // button: the top row stops short of the strip.
                                 Row(
-                                    Modifier.align(Alignment.TopStart).fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp),
+                                    Modifier.align(Alignment.TopStart).fillMaxWidth().padding(
+                                        start = 16.dp + (if (duo.railOnRight) 0.0 else duo.strip).dp,
+                                        end = 8.dp + (if (duo.railOnRight) duo.strip else 0.0).dp,
+                                        top = 8.dp,
+                                    ),
                                     verticalAlignment = Alignment.CenterVertically,
                                 ) {
-                                    if (tab == 3) {
+                                    if (tabIndex == 3) {
                                         SearchField(
                                             query = query,
                                             onQueryChange = ::onQueryChange,
@@ -1393,7 +1399,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     } else Spacer(Modifier.weight(1f))
                                     IosTopPill(
                                         account = account,
-                                        onHistory = if (tab == 2 && signedIn) ({ openHistory() }) else null,
+                                        onHistory = if (tabIndex == 2 && signedIn) ({ openHistory() }) else null,
                                         onAccount = { stack = stack + IosPage.Settings },
                                     )
                                 }
@@ -1407,7 +1413,8 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                     PartyPing(Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 20.dp))
                                 }
                                 if (top === IosPage.Replay) { // Android's Replay keeps the account in its top bar
-                                    Box(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars).padding(top = 8.dp, end = 8.dp)) {
+                                    Box(Modifier.align(Alignment.TopEnd).windowInsetsPadding(WindowInsets.statusBars)
+                                        .padding(top = 8.dp, end = 8.dp + (if (duo.railOnRight) duo.strip else 0.0).dp)) {
                                         IosTopPill(account = account, onHistory = null, onAccount = { stack = stack + IosPage.Settings })
                                     }
                                 }
