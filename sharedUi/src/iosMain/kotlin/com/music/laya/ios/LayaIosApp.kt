@@ -977,12 +977,13 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                     Box(Modifier.fillMaxSize().layerBackdrop(appBackdrop).nestedScroll(navBarScroll)) {
                         // One page of the stack (null: the tab's own page). A function of the page so the page under the
                         // top one can be drawn too, behind a back swipe or a push, as UINavigationController shows it.
-                        val renderPage: @Composable (IosPage?) -> Unit = { top ->
+                        val pageStates = rememberSaveableStateHolder()
+                        val renderPage: @Composable (IosPage?, Int) -> Unit = { top, tabIndex ->
                         // A detail page draws its own header up under the status bar (as Android's edge to edge does), so only the other pages are inset here.
                         // Pages that draw behind the status bar themselves (Android's edge-to-edge detail and Replay).
                         val onDetail = top is IosPage.Detail || top === IosPage.Replay
                         Box(Modifier.fillMaxSize().then(if (onDetail) Modifier else Modifier.windowInsetsPadding(WindowInsets.statusBars))) {
-                            when (if (top == null) tab else -1) {
+                            when (if (top == null) tabIndex else -1) {
                             -1 -> {
                                 when (top) {
                                     is IosPage.Detail -> key(top) {
@@ -1416,61 +1417,110 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         // Page motion, as UINavigationController's. A pushed page slides in from the right over the page
                         // it came from, which drifts a little left and dims; Back slides the page off to the right over
                         // the one under it; the back swipe drags the page with the finger, the page under it in view;
-                        // a tab switch fades in.
+                        // a tab switch slides the tabs past each other, in the order of the tab bar.
+                        //
+                        // The first frame of a change is worked out here, in composition, from what was shown before:
+                        // the effect below only starts on the frame after, and a new page drawn at rest on that first
+                        // frame flashed fully into view for one frame (33 ms) before sliding in.
                         val pageWidth = this@BoxWithConstraints.constraints.maxWidth.toFloat().coerceAtLeast(1f)
                         val pageShift = remember { Animatable(0f) }
-                        val pageFade = remember { Animatable(1f) }
                         var shownDepth by remember { mutableStateOf(stack.size) }
                         var shownTab by remember { mutableStateOf(tab) }
                         var shownTop by remember { mutableStateOf(stack.lastOrNull()) }
-                        // The page Back is taking away, drawn over the page under it until it has slid off.
-                        var leaving by remember { mutableStateOf<IosPage?>(null) }
+                        // What is sliding away: the page Back takes off, or the tab being left (page and tab).
+                        // (page, tab, index in its stack), the index keeping its saved state's key.
+                        var outgoing by remember { mutableStateOf<Triple<IosPage?, Int, Int>?>(null) }
+                        var outgoingIsTab by remember { mutableStateOf(false) }
+                        var slideDir by remember { mutableStateOf(1f) }
                         // Set by the back swipe, which has already slid the page off by the time the stack pops.
                         var swipedOff by remember { mutableStateOf(false) }
+                        val tabChange = tab != shownTab
+                        val pendingPush = !tabChange && stack.size > shownDepth
+                        val pendingPop = !tabChange && stack.size < shownDepth && !swipedOff && shownTop != null
+                        val tabDirection = if (tab > shownTab) 1f else -1f
                         LaunchedEffect(stack.size, tab) {
                             val depth = stack.size
                             val before = shownTop
-                            shownTop = stack.lastOrNull()
+                            val beforeTab = shownTab
+                            val spring = spring<Float>(dampingRatio = 1f, stiffness = 500f)
                             when {
-                                tab != shownTab -> {
-                                    leaving = null
-                                    pageShift.snapTo(0f)
-                                    pageFade.snapTo(0.35f)
-                                    pageFade.animateTo(1f, tween(220))
+                                tab != beforeTab -> {
+                                    val direction = if (tab > beforeTab) 1f else -1f
+                                    slideDir = direction
+                                    outgoing = Triple(before, beforeTab, shownDepth - 1); outgoingIsTab = true
+                                    pageShift.snapTo(direction * pageWidth)
+                                    shownTop = stack.lastOrNull(); shownDepth = depth; shownTab = tab
+                                    pageShift.animateTo(0f, spring)
+                                    outgoing = null; outgoingIsTab = false
                                 }
                                 depth > shownDepth -> {
-                                    leaving = null
-                                    pageFade.snapTo(1f)
+                                    outgoing = null
                                     pageShift.snapTo(pageWidth)
-                                    pageShift.animateTo(0f, spring(dampingRatio = 1f, stiffness = 500f))
+                                    shownTop = stack.lastOrNull(); shownDepth = depth
+                                    pageShift.animateTo(0f, spring)
                                 }
-                                depth < shownDepth && swipedOff -> swipedOff = false
+                                depth < shownDepth && swipedOff -> {
+                                    swipedOff = false
+                                    shownTop = stack.lastOrNull(); shownDepth = depth
+                                }
                                 depth < shownDepth && before != null -> {
-                                    leaving = before
+                                    outgoing = Triple(before, tab, shownDepth - 1); outgoingIsTab = false
                                     pageShift.snapTo(0f)
-                                    pageShift.animateTo(pageWidth, spring(dampingRatio = 1f, stiffness = 500f))
-                                    leaving = null
+                                    shownTop = stack.lastOrNull(); shownDepth = depth
+                                    pageShift.animateTo(pageWidth, spring)
+                                    outgoing = null
                                     pageShift.snapTo(0f)
                                 }
-                            }
-                            shownDepth = depth
-                            shownTab = tab
-                        }
-                        val moving by remember { derivedStateOf { pageShift.value > 0.5f } }
-                        val front = leaving ?: stack.lastOrNull()
-                        if (moving && (leaving != null || stack.isNotEmpty())) {
-                            val under = if (leaving != null) stack.lastOrNull() else stack.getOrNull(stack.size - 2)
-                            Box(Modifier.fillMaxSize().graphicsLayer { translationX = (pageShift.value - pageWidth) * 0.3f }) {
-                                key(under) { renderPage(under) }
-                                Box(Modifier.fillMaxSize().graphicsLayer { alpha = 0.25f * (1f - pageShift.value / pageWidth) }
-                                    .background(Color.Black))
+                                else -> { shownTop = stack.lastOrNull(); shownDepth = depth; shownTab = tab }
                             }
                         }
-                        Box(Modifier.fillMaxSize().graphicsLayer {
-                            translationX = pageShift.value
-                            alpha = pageFade.value
-                        }.then(if (moving) Modifier.background(windowBackground) else Modifier)) {
-                            key(front) { renderPage(front) }
+                        // The key a page keeps its scroll and other saved state under, so the page under the top one,
+                        // and a page Back returns to, come back where they were left.
+                        fun stateKey(page: IosPage?, tabIndex: Int, index: Int) = "$tabIndex/$index/${page?.hashCode() ?: 0}"
+                        @Composable
+                        fun Page(page: IosPage?, tabIndex: Int, index: Int) {
+                            key(stateKey(page, tabIndex, index)) {
+                                pageStates.SaveableStateProvider(stateKey(page, tabIndex, index)) { renderPage(page, tabIndex) }
+                            }
+                        }
+                        val moving by remember { derivedStateOf { pageShift.value > 0.5f || pageShift.value < -0.5f } }
+                        when {
+                            // A tab switch: the two tabs side by side, the new one coming in from its side of the bar.
+                            tabChange || outgoingIsTab -> {
+                                val out = if (tabChange) Triple(shownTop, shownTab, shownDepth - 1) else outgoing
+                                if (out != null) Box(Modifier.fillMaxSize().graphicsLayer {
+                                    translationX = if (tabChange) 0f else pageShift.value - slideDir * pageWidth
+                                }) { Page(out.first, out.second, out.third) }
+                                Box(Modifier.fillMaxSize().graphicsLayer {
+                                    translationX = if (tabChange) tabDirection * pageWidth else pageShift.value
+                                }.background(windowBackground)) { Page(stack.lastOrNull(), tab, stack.size - 1) }
+                            }
+                            else -> {
+                                val leavingEntry = outgoing ?: if (pendingPop) Triple(shownTop, tab, shownDepth - 1) else null
+                                val leaving = leavingEntry?.first
+                                val front = leaving ?: stack.lastOrNull()
+                                val frontIndex = leavingEntry?.third ?: (stack.size - 1)
+                                val atRest = !moving && !pendingPush && leaving == null
+                                if (!atRest) {
+                                    val under = if (leaving != null) stack.lastOrNull() else stack.getOrNull(stack.size - 2)
+                                    val underIndex = if (leaving != null) stack.size - 1 else stack.size - 2
+                                    Box(Modifier.fillMaxSize().graphicsLayer {
+                                        val shift = if (pendingPush) pageWidth else pageShift.value
+                                        translationX = (shift - pageWidth) * 0.3f
+                                    }) {
+                                        Page(under, tab, underIndex)
+                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                            val shift = if (pendingPush) pageWidth else pageShift.value
+                                            alpha = 0.25f * (1f - shift / pageWidth)
+                                        }.background(Color.Black))
+                                    }
+                                }
+                                Box(Modifier.fillMaxSize().graphicsLayer {
+                                    translationX = if (pendingPush) pageWidth else pageShift.value
+                                }.then(if (atRest) Modifier else Modifier.background(windowBackground))) {
+                                    Page(front, tab, frontIndex)
+                                }
+                            }
                         }
                         // iOS's back swipe: a drag rightwards from the left edge leaves the page, as UINavigationController's
                         // would. Pages are a Compose stack here, so there was no back gesture at all (#18).
