@@ -93,6 +93,9 @@ final class StreamCache {
         private var progressed = false
         private var connections = 0
         private static let retryDelays: [Double] = [0.5, 1, 2, 4]
+        /// Under this much on disk, a failure is still the track failing to start (see retry).
+        private static let startBytes: Int64 = 256 * 1024
+        private static let startRetries = 2
         private static let throttleDelays: [Double] = [1, 2, 4, 8, 16]
 
         fileprivate init(cache: StreamCache, url: URL, headers: [String: String], path: URL, id: String) {
@@ -242,7 +245,12 @@ final class StreamCache {
             let delays = status == 429 ? Self.throttleDelays : Self.retryDelays
             if progressed { attempt = 0 }
             let reason = error.map { "\($0.domain) \($0.code)" } ?? (status == 0 ? "incomplete response" : "HTTP \(status)")
-            guard attempt < delays.count else {
+            // Still at the start (next to nothing on disk): someone is waiting on silence, and the source behind this
+            // stream gets its turn only once this gives up. A Qobuz file that sent 1 byte and dropped took five tries,
+            // 18 s, before falling back. Two retries there; the full ladder mid-track, and always for 429 (throttling).
+            let atStart = state.written < Self.startBytes && status != 429
+            let allowed = atStart ? min(Self.startRetries, delays.count) : delays.count
+            guard attempt < allowed else {
                 nativeLog("StreamCache[\(id)]: last failure: \(reason)", warn: true)
                 let transportCode = error.flatMap { $0.domain == NSURLErrorDomain ? $0.code : nil }
                 return fail(status == 0 ? (transportCode ?? NSURLErrorNetworkConnectionLost) : status)
