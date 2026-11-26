@@ -2,14 +2,18 @@ import CoreGraphics
 import Foundation
 
 /// A single media bitmap: WidgetKit must not classify/tint the wash separately
-/// from the album artwork. Use explicit 8-bit sRGB and opaque pixels, avoiding
-/// dynamic colours, extended-range images and appearance-dependent materials.
+/// from the album artwork. Opaque 8-bit pixels, avoiding dynamic colours,
+/// extended-range images and appearance-dependent materials.
+///
+/// Display P3, not sRGB: the Liquid Artwork wash is rendered wide-colour (its 1.6× saturation lands outside
+/// sRGB), and BitChord's WidgetPod shows it as such. Flattened into sRGB those colours were clipped, so the
+/// same cover gave a duller, flatter field here than there.
 enum PosterSurfaceRenderer {
     static func render(cover: CGImage?, wash: CGImage?, size: CGSize, small: Bool, scale: CGFloat) -> CGImage? {
         guard size.width > 0, size.height > 0, scale > 0 else { return nil }
         let width = Int(ceil(size.width * scale))
         let height = Int(ceil(size.height * scale))
-        guard let space = CGColorSpace(name: CGColorSpace.sRGB),
+        guard let space = CGColorSpace(name: CGColorSpace.displayP3),
               let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8,
                 bytesPerRow: width * 4, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
         context.setFillColor(CGColor(srgbRed: 0.45, green: 0.45, blue: 0.45, alpha: 1))
