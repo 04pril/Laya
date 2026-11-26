@@ -980,7 +980,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         // Page motion, as UINavigationController's: a pushed page slides in from the right, the page
                         // under a popped one comes back from a little to the left, the back swipe drags the page with
                         // the finger, and a tab switch fades in. Only the top page is composed, so the motion is its own.
-                        val pageWidth = constraints.maxWidth.toFloat().coerceAtLeast(1f)
+                        val pageWidth = this@BoxWithConstraints.constraints.maxWidth.toFloat().coerceAtLeast(1f)
                         val pageShift = remember { Animatable(0f) }
                         val pageFade = remember { Animatable(1f) }
                         var shownDepth by remember { mutableStateOf(stack.size) }
