@@ -20,10 +20,10 @@ struct PosterMediaSurface: View {
         }
     }()
 
+    // BitChord's PosterBackground: the wash itself, as the widget's container background.
     var body: some View {
         Image(uiImage: art?.surface ?? Self.fallbackWash)
             .resizable()
-            .layaArtwork()
             .accessibilityHidden(true)
     }
 }
@@ -78,14 +78,10 @@ struct PosterSquareWidgetView: View {
         let face = PosterFace(snapshot: snapshot)
         GeometryReader { proxy in
             let scale = min(proxy.size.width, proxy.size.height) / 158
-            PosterMediaSurface(art: art)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .overlay {
+            Group {
                     ZStack(alignment: .topLeading) {
-                        if art?.cover == nil {
-                            PosterCover(art: art, side: 67 * scale, cornerRadius: 10.5 * scale)
+                        PosterCover(art: art, side: 67 * scale, cornerRadius: 10.5 * scale)
                             .position(x: 49 * scale, y: 49 * scale)
-                        }
                         Text(face.title)
                             .font(.system(size: 12.5 * scale, weight: .semibold))
                             .foregroundStyle(.white)
@@ -121,8 +117,7 @@ struct PosterSquareWidgetView: View {
                 }
         }
         .dynamicTypeSize(.large)
-        .containerBackground(for: .widget) { Color.clear }
-        .clipShape(ContainerRelativeShape())
+        .containerBackground(for: .widget) { PosterMediaSurface(art: art) }
         .overlay {
             ContainerRelativeShape()
                 .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)
@@ -144,14 +139,10 @@ struct PosterWideWidgetView: View {
         let face = PosterFace(snapshot: snapshot)
         GeometryReader { proxy in
             let scale = min(proxy.size.width / 338, proxy.size.height / 158)
-            PosterMediaSurface(art: art)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .overlay {
+            Group {
                     ZStack(alignment: .topLeading) {
-                        if art?.cover == nil {
-                            PosterCover(art: art, side: 135.5 * scale)
+                        PosterCover(art: art, side: 135.5 * scale)
                             .position(x: 79.25 * scale, y: 79 * scale)
-                        }
                         VStack(spacing: 2 * scale) {
                             Text(face.title)
                                 .font(.system(size: 14 * scale, weight: .semibold))
@@ -191,8 +182,7 @@ struct PosterWideWidgetView: View {
                 }
         }
         .dynamicTypeSize(.large)
-        .containerBackground(for: .widget) { Color.clear }
-        .clipShape(ContainerRelativeShape())
+        .containerBackground(for: .widget) { PosterMediaSurface(art: art) }
         .overlay {
             ContainerRelativeShape()
                 .strokeBorder(Color.white.opacity(0.16), lineWidth: 0.6)

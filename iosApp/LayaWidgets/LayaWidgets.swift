@@ -136,10 +136,8 @@ struct LayaProvider: TimelineProvider {
         case .media(let band): faceImage = WidgetArt.media(cover: art, size: size, band: band, scale: scale)
         case .body: faceImage = WidgetArt.body(cover: art, size: size, scale: scale)
         case .poster:
-            let wash = WidgetArt.poster(cover: art)
-            faceImage = PosterSurfaceRenderer.render(cover: art?.cgImage, wash: wash?.cgImage,
-                size: size, small: context.family == .systemSmall, scale: scale)
-                .map { UIImage(cgImage: $0, scale: scale, orientation: .up) }
+            // BitChord's WidgetPod: the wash alone; the cover is drawn over it by the view.
+            faceImage = WidgetArt.poster(cover: art)
         }
         let tiles = wantsTiles && images ? s.liked.map { image($0.art, maxPx: 240) } : []
         return LayaEntry(snapshot: s, size: size, face: faceImage, art: art, tiles: tiles)

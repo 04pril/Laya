@@ -39,10 +39,6 @@ xcrun clang -fobjc-arc -framework Foundation "$task_root/iosApp/tests/NowPlaying
 "$task_tmp/nowplaying"
 
 
-xcrun swiftc "$task_root/iosApp/LayaWidgets/PosterSurfaceRenderer.swift" "$task_root/iosApp/tests/PosterSurfaceRendererTests.swift" -o "$task_tmp/poster-surface"
-"$task_tmp/poster-surface"
-
-
 xcrun swiftc "$task_root/iosApp/iosApp/AdaptiveContentBounds.swift" "$task_root/iosApp/tests/AdaptiveContentBoundsTests.swift" -o "$task_tmp/adaptive-bounds"
 "$task_tmp/adaptive-bounds"
 
