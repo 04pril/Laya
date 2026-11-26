@@ -1,8 +1,8 @@
 name: SideStore source
 
 on:
-  # release.yml attaches the IPA to the draft, so a published release already carries it
-  # (draft assets can't be downloaded).
+  # The iOS IPA is attached to its release by hand (ios-v* tags are not built by release.yml, which takes v*.*.*),
+  # so this runs once the release is published or edited; draft assets can't be downloaded.
   release:
     types: [published, released, edited]
   workflow_dispatch:
