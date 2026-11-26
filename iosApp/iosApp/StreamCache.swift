@@ -49,7 +49,9 @@ final class StreamCache {
     /// Oldest files out until the folder fits the cap; files a reader holds are kept. Called with `lock` held.
     private func evict() {
         let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
-        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? []
+        // The cached files only: a length record (.len) is tiny and goes with its file below.
+        let files = ((try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys)) ?? [])
+            .filter { $0.pathExtension == "bin" }
         var info = files.map { f -> (url: URL, size: Int64, date: Date) in
             let v = try? f.resourceValues(forKeys: Set(keys))
             return (f, Int64(v?.fileSize ?? 0), v?.contentModificationDate ?? .distantPast)
@@ -60,6 +62,7 @@ final class StreamCache {
             let old = info.removeFirst()
             if inUse.contains(old.url) { continue }
             try? FileManager.default.removeItem(at: old.url)
+            try? FileManager.default.removeItem(at: Entry.lengthRecord(for: old.url))
             entries = entries.filter { $0.value.path != old.url }
             total -= old.size
         }
@@ -106,7 +109,17 @@ final class StreamCache {
             } // else keeps what a previous run left
             var st = stat()
             if stat(path.path, &st) == 0 { _written = Int64(st.st_size) }
+            // A file an earlier run fetched to its end starts complete: asking the host for what follows it gets a 416,
+            // and Akamai (Qobuz) sends that without the "bytes */total" that would prove the file whole, so a 250 MB
+            // track already on disk failed in a tenth of a second on every play.
+            let record = Self.lengthRecord(for: path)
+            if let text = try? String(contentsOf: record, encoding: .utf8), let length = Int64(text), length > 0 {
+                if length == _written { _length = length; _complete = true } else { try? FileManager.default.removeItem(at: record) }
+            }
         }
+
+        /// Beside the cached file: its full length, written once the download reached the end.
+        fileprivate static func lengthRecord(for path: URL) -> URL { path.deletingPathExtension().appendingPathExtension("len") }
 
         deinit { if wfd >= 0 { close(wfd) }; if rfd >= 0 { close(rfd) } }
 
@@ -225,7 +238,8 @@ final class StreamCache {
         }
 
         private func finish() {
-            lock.lock(); _complete = true; lock.unlock()
+            lock.lock(); _complete = true; let length = _length ?? _written; lock.unlock()
+            try? Data(String(length).utf8).write(to: Self.lengthRecord(for: path), options: .atomic)
             nativeLog("StreamCache[\(id)]: complete, \(state.written) bytes in \(connections) connection(s)")
             task = nil
             session?.finishTasksAndInvalidate(); session = nil
@@ -267,13 +281,14 @@ final class StreamCache {
             let http = response as? HTTPURLResponse
             let status = http?.statusCode ?? 0
             let written = state.written
-            if status == 416, written > 0 { // already have it all (a finished file from an earlier run)
+            if status == 416, written > 0, requestedOffset == written { // already have it all (a finished file from an earlier run)
                 completionHandler(.cancel)
-                if let total = Self.total(http?.value(forHTTPHeaderField: "Content-Range")) {
-                    lock.lock(); _length = total; lock.unlock()
-                    return written >= total ? finish() : fail(status)
-                }
-                return fail(status)
+                // Asked from the file's own end, so 416 says that end is at or past the resource's: the file is whole.
+                // Only a total stated larger than what is on disk contradicts that. Akamai (Qobuz) states none at all.
+                let total = Self.total(http?.value(forHTTPHeaderField: "Content-Range"))
+                if let total, total > written { return fail(status) }
+                lock.lock(); _length = total ?? written; lock.unlock()
+                return finish()
             }
             guard (200...299).contains(status) else {
                 completionHandler(.cancel)
