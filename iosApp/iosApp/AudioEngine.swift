@@ -664,8 +664,6 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func adopt(_ loader: ChunkedResourceLoader, for item: AVPlayerItem) {
         loader.observeTerminalFailure { [weak self, weak item] status in
             DispatchQueue.main.async {
-                // Only the playing item's failure is actionable; a queued one is
-                // re-resolved by Kotlin when it becomes current and fails.
                 guard let self, let item else { return }
                 let message = status > 0 ? "Stream failed (HTTP \(status))" : "Stream failed (transport code \(status))"
                 self.fail(item, message: message, httpStatus: status > 0 ? Int32(status) : 0)
@@ -796,6 +794,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// Point the status observation and the end/fail notifications at [item].
     private func becomeCurrent(_ item: AVPlayerItem) {
         currentItem = item
+        // The loader dispatches back to main, after the caller reports the queue advance to Kotlin.
+        loaders[ObjectIdentifier(item)]?.replayTerminalFailure()
         lastWatchedPosition = -1
         stuckAt = -1
         EqualizerTuning.dspKey = UnsafeRawPointer(Unmanaged.passUnretained(item).toOpaque())

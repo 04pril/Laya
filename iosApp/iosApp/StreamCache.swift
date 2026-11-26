@@ -209,7 +209,7 @@ final class StreamCache {
                 session = URLSession(configuration: config, delegate: self, delegateQueue: ops)
             }
             var request = URLRequest(url: url)
-            // A lone byte is only a partial format probe. Retry from the header and skip its cached prefix.
+            // A one-byte cache repeatedly failed to resume in a Qobuz report. Fetch from zero and skip the cached byte.
             requestedOffset = s.written == 1 ? 0 : s.written
             for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
             request.setValue("bytes=\(requestedOffset)-", forHTTPHeaderField: "Range")

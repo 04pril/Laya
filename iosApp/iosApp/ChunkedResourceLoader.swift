@@ -93,8 +93,18 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         queue.async {
             guard !self.invalidated else { return }
             self.onTerminalFailure = observer
-            if let status = self.terminalFailure { observer(status) }
+            self.notifyRecordedTerminalFailure()
         }
+    }
+
+    /// A queued item may become current after the engine ignored its first failure notification.
+    func replayTerminalFailure() {
+        queue.async { self.notifyRecordedTerminalFailure() }
+    }
+
+    private func notifyRecordedTerminalFailure() {
+        guard !invalidated, let status = terminalFailure else { return }
+        onTerminalFailure?(status)
     }
 
     func resourceLoader(
@@ -355,7 +365,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
     private func reportTerminalFailure(_ status: Int) {
         guard terminalFailure == nil else { return }
         terminalFailure = status
-        onTerminalFailure?(status)
+        notifyRecordedTerminalFailure()
     }
 
     private func releaseStreaming() {
