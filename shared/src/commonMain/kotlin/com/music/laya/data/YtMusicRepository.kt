@@ -685,6 +685,9 @@ object YtMusicRepository {
         else page.copy(owned = InnertubeParser.parsePlaylistOwned(response))
     }
 
+    /** Radio and personalized mixes can keep generating pages for playback. */
+    fun isRadioMix(browseId: String): Boolean = browseId.removePrefix("VL").startsWith("RD")
+
     /**
      * Joins an album's metadata page to its authoritative track listing.
      *

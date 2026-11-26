@@ -176,7 +176,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     var upgrading by mutableStateOf(false); private set
 
     val song: Song? get() = queue.getOrNull(index)
-    val hasNext get() = manualNext() >= 0
+    val hasNext get() = manualNext() >= 0 || mixContinuation != null
     val hasPrevious get() = index > 0
 
     /** Sleep timer, as Android's SleepTimer: a minutes preset (null = off) or "pause when this track ends". */
@@ -196,6 +196,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     private var nextJob: Job? = null
     private var upgradeJob: Job? = null
     private var autoplayJob: Job? = null
+    private var mixContinuation: String? = null
+    private var mixPageJob: Job? = null
+    private val loadedMixTokens = mutableSetOf<String>()
     private var preloaded = -1
     /** Tracks whose current stream came from a source above YouTube, so a failure can fall back once. */
     private val offSite = mutableSetOf<String>()
@@ -399,7 +402,9 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         party.onLocalIntent()
     }
 
-    fun play(songs: List<Song>, startIndex: Int) = intent {
+    fun play(songs: List<Song>, startIndex: Int, continuation: String? = null) = intent {
+        resetMix(continuation.takeUnless { ListenTogether.state.value.inParty })
+        autoplayJob?.cancel()
         val entries = songs.map { it.asQueueEntry(QueueTier.CONTEXT) }
         if (AppSettings.shuffleEnabled.value) {
             queue = QueueTimeline.shuffledStartingOrder(entries, startIndex)
@@ -413,6 +418,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     /** Where Next goes: the following track, wrapping to the top under Repeat all. */
     private fun manualNext() = when {
         index + 1 < queue.size -> index + 1
+        mixContinuation != null -> -1
         AppSettings.repeatMode.value == RepeatModes.ALL && queue.isNotEmpty() -> 0
         else -> -1
     }
@@ -420,7 +426,10 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
     /** Where playback goes by itself: the same track under Repeat one. */
     private fun autoNext() = if (AppSettings.repeatMode.value == RepeatModes.ONE) index else manualNext()
 
-    fun next() = intent { manualNext().let { if (it >= 0) start(it) } }
+    fun next() = intent {
+        if (manualNext() < 0 && continueMix { manualNext().takeIf { it >= 0 }?.let { start(it) } }) return@intent
+        manualNext().takeIf { it >= 0 }?.let { start(it) }
+    }
     fun previous() = intent { if (hasPrevious) start(index - 1) else rawSeek(0) }
     fun jumpTo(i: Int) = intent { if (i in queue.indices) start(i) }
     fun togglePlayPause() = setPlaying(!isPlaying)
@@ -479,6 +488,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         castReconcileJob?.cancel(); castLoading = null
         versionSwitching = false; upgrading = false; playingFromSource = false; handing = false
         startJob?.cancel(); nextJob?.cancel(); upgradeJob?.cancel(); autoplayJob?.cancel(); alignJob?.cancel()
+        resetMix()
         IosLyricsAlign.offsetMs.value = 0
         playingOpened = null
         queuedOpened = null; versionOpened.clear(); offSite.clear(); streams.clear()
@@ -564,6 +574,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
 
     /** Puts the party's running order on this device and starts the track at [at]. */
     internal fun partyLoad(tracks: List<PartyTrack>, at: Int) {
+        resetMix()
         queue = tracks.map { it.toQueueSong().let { s -> s.asQueueEntry(s.queueTier) } }
         start(at)
     }
@@ -591,10 +602,59 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         topUpAutoplay()
     }
 
+    private fun resetMix(token: String? = null) {
+        mixPageJob?.cancel()
+        mixPageJob = null
+        loadedMixTokens.clear()
+        mixContinuation = token
+    }
+
+    /** Radio continuations belong to the playing queue, even when regular AutoPlay is off. */
+    private fun loadMixPage(): Job? {
+        val token = mixContinuation ?: return null
+        mixPageJob?.takeIf { it.isActive }?.let { return it }
+        val seed = song ?: return null
+        return scope.launch {
+            val page = withContext(ioDispatcher) { YtMusicRepository.moreSongs(token).getOrNull() }
+            val known = queue.mapTo(HashSet()) { it.videoId }
+            val added = page?.songs.orEmpty().filter { known.add(it.videoId) }
+            loadedMixTokens += token
+            mixContinuation = page?.continuation?.takeIf { added.isNotEmpty() && it !in loadedMixTokens }
+            queue = queue + added.map {
+                it.copy(
+                    playbackSource = seed.playbackSource,
+                    playbackSourceId = seed.playbackSourceId,
+                    playbackSourceType = seed.playbackSourceType,
+                ).asQueueEntry(QueueTier.CONTEXT)
+            }
+            IosPlayerStore.saveQueue(queue, index)
+            announce()
+            if (IosCast.active) castReconcile() else preResolveNext()
+        }.also { mixPageJob = it }
+    }
+
+    /** If the queue reached the boundary before prefetch finished, advance after that same request. */
+    private fun continueMix(advance: () -> Unit): Boolean {
+        val entry = song?.queueEntryId ?: return false
+        val job = loadMixPage() ?: return false
+        scope.launch {
+            job.join()
+            if (!job.isCancelled && song?.queueEntryId == entry) {
+                advance()
+                party.onLocalIntent()
+            }
+        }
+        return true
+    }
+
     /** AutoPlay: on the last track, append the radio for it (Android's loadAutoplayTracks, minus party and module sources). */
     private fun topUpAutoplay() {
         val seed = song ?: return
         val inParty = ListenTogether.state.value
+        if (mixContinuation != null && !inParty.inParty) {
+            if (queue.lastIndex - index <= 1) loadMixPage()
+            return
+        }
         // A party has one AutoPlay supplier, elected the way Android does; the others wait for its queue.
         if (inParty.inParty && (!inParty.playback.autoplayEnabled || inParty.you?.memberId != partyAutoplaySupplier(inParty))) return
         if (!inParty.inParty && !AppSettings.autoplay.value || AppSettings.repeatMode.value == RepeatModes.ALL ||
@@ -941,7 +1001,10 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         nextJob?.cancel()
         upgradeJob?.cancel()
         startJob?.cancel()
-        if (IosCast.active) return castLoad(song, fromMs, play = true)
+        if (IosCast.active) {
+            if (mixContinuation != null && queue.lastIndex - index <= 1) loadMixPage()
+            return castLoad(song, fromMs, play = true)
+        }
         startJob = scope.launch {
             runCatching { resolveInto(song, next = false) }
                 .onFailure {
@@ -1069,7 +1132,10 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (durationMs > 0) this.durationMs = durationMs
         // A seek is asked now and answered a moment later; until then the receiver's clock still reads the old place.
         if (NSDate().timeIntervalSinceReferenceDate - castSeekAt > 1.5) position.report(positionMs)
-        if (state == 4) autoNext().let { if (it >= 0) start(it) else isPlaying = false } // ran out of the few tracks it holds
+        if (state == 4) {
+            fun advance() = autoNext().let { if (it >= 0) start(it) else isPlaying = false }
+            if (autoNext() >= 0 || !continueMix(::advance)) advance()
+        }
         IosScrobbler.onTick(song, isPlaying, position.positionMs, this.durationMs)
         if (!isPlaying && song != null) saveState()
     }
@@ -1170,7 +1236,14 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         if (IosCast.active) return
         song?.let { playbackLog.event(it.videoId, "track ended positionMs=${position.positionMs}") }
         if (sleepAfterTrack) { cancelSleep(); isPlaying = false; PlaybackTracker.onPlaybackFinished(trackedSec); IosScrobbler.onStopped(); return }
-        autoNext().let { if (it >= 0) start(it) else { isPlaying = false; PlaybackTracker.onPlaybackFinished(trackedSec); IosScrobbler.onStopped() } }
+        fun advance() = autoNext().let {
+            if (it >= 0) start(it) else {
+                isPlaying = false
+                PlaybackTracker.onPlaybackFinished(trackedSec)
+                IosScrobbler.onStopped()
+            }
+        }
+        if (autoNext() >= 0 || !continueMix(::advance)) advance()
         party.onLocalIntent()
     }
 

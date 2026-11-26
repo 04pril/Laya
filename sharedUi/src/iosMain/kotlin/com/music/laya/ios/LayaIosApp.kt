@@ -245,14 +245,14 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
     val focusManager = LocalFocusManager.current
     val playerDock = remember { PlayerDock() }
     val sheetMotion = remember { PlayerSheetMotion(scope, playerDock, { nowPlayingOpen }, { nowPlayingOpen = it }) }
-    fun playSelection(songs: List<Song>, at: Int) {
+    fun playSelection(songs: List<Song>, at: Int, mixContinuation: String? = null) {
         if (com.music.laya.data.listentogether.ListenTogether.state.value.controlsLocked) return
         val page = (stack.lastOrNull() as? IosPage.Detail)?.page
         val entries = if (page?.type == BrowseType.PLAYLIST) songs.map {
             it.copy(playbackSource = page.title, playbackSourceId = page.browseId,
                 playbackSourceType = com.music.laya.data.model.PlaybackSourceType.BROWSE)
         } else songs
-        player.play(entries, at)
+        player.play(entries, at, mixContinuation)
         if (com.music.laya.data.settings.IosCustomization.openPlayer.value) sheetMotion.open()
     }
     sheetMotion.windowInfo = LocalWindowInfo.current
@@ -604,6 +604,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
         scope.launch {
             val loaded = loadDetail(base)
             stack = stack.map { if (it is IosPage.Detail && it.page === base) IosPage.Detail(loaded) else it }
+            if (YtMusicRepository.isRadioMix(id)) return@launch
             val seen = HashSet<String>()
             var next = loaded.continuation
             while (next != null && seen.add(next)) {
@@ -983,6 +984,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                             library = loaded.library?.let { it.copy(saved = saved ?: it.saved) },
                                             subscription = loaded.subscription?.let { it.copy(subscribed = subscribed ?: it.subscribed) },
                                         )
+                                        val mixContinuation = page.continuation.takeIf { YtMusicRepository.isRadioMix(page.browseId) }
                                         fun toggle(target: Boolean, show: (Boolean) -> Unit, write: suspend () -> Result<Unit>) {
                                             show(target)
                                             scope.launch { if (write().isSuccess) loadLibrary() else show(!target) }
@@ -1003,7 +1005,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                                 val picked = songs.getOrNull(i)
                                                 if (picked?.isUnresolvedSpotify != true) {
                                                     val playable = songs.filterNot { it.isUnresolvedSpotify }
-                                                    playSelection(playable, playable.indexOf(picked).coerceAtLeast(0))
+                                                    playSelection(playable, playable.indexOf(picked).coerceAtLeast(0), mixContinuation)
                                                 }
                                             },
                                             onSongLongPress = { menuSong = it },
@@ -1011,7 +1013,7 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                             onShuffle = { songs ->
                                                 if (songs.isNotEmpty()) {
                                                     AppSettings.setShuffleEnabled(true)
-                                                    playSelection(songs, songs.indices.random())
+                                                    playSelection(songs, songs.indices.random(), mixContinuation)
                                                 }
                                             },
                                             onSectionItemClick = { item ->
