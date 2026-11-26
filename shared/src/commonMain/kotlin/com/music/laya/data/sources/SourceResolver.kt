@@ -149,7 +149,10 @@ object SourceResolver {
         // reopen disabled JioSaavn/addon tracks already sitting in the queue.
         // Resolve the pin only from the enabled list so Off means off for both
         // newly matched tracks and source-backed rows queued earlier.
-        val pinned = active.firstOrNull { it.configId == configId }
+        // Not the pinned source when it failed this very track in the player lately (PlaybackFailures): the same
+        // file that would not download would be handed over again. The fallback below finds it elsewhere instead.
+        val skipped = PlaybackFailures.ruledOut(target)
+        val pinned = active.firstOrNull { it.configId == configId && it.configId !in skipped }
 
         // The upgrade path: with lossless asked for and the pinned source
         // unable to serve it, anything ranked above it that can is worth
@@ -200,9 +203,14 @@ object SourceResolver {
         // Opus is a lesser copy of a different upload, and the listener chose
         // this addon's precisely to not be hearing it — see [MIX_PARAM].
         val fallbacks = active.filterNot {
-            it.configId == configId || (pickedMix != null && it.kind == SourceKind.YOUTUBE)
+            it.configId == configId || it.configId in skipped || (pickedMix != null && it.kind == SourceKind.YOUTUBE)
         }
-        val (fallbackSource, stream) = bestAcross(fallbacks, target, request, late = late) ?: return null
+        // The other catalogues first, YouTube only if none has it: raced together, YouTube's quicker Opus could win
+        // over another source's FLAC of the same track.
+        val (catalogues, youtube) = fallbacks.partition { it.kind != SourceKind.YOUTUBE }
+        val (fallbackSource, stream) = bestAcross(catalogues, target, request, late = late)
+            ?: bestAcross(youtube, target, request).also { late?.complete(null) }
+            ?: return null
         TrackLog.d(TAG, "fallback: '${target.title}' served by ${fallbackSource.displayName}")
         return stream
     }

@@ -4182,7 +4182,14 @@ class PlaybackService : MediaLibraryService() {
         // A track the listener picked from an addon is that addon's or nothing:
         // a YouTube Opus copy under it is a different, lesser recording they
         // did not ask for. Let the ordinary retry/skip path deal with it.
-        if (playbackUri.authority == "source") return false
+        if (playbackUri.authority == "source") {
+            // Its retry re-opens the same row; with the failure on record the resolver passes this source over and
+            // looks for the track elsewhere (SourceResolver.resolve, PlaybackFailures) instead of the same file.
+            playbackUri.getQueryParameter("s")?.let { config ->
+                com.music.laya.data.sources.PlaybackFailures.record(config, SourceResolver.targetIn(playbackUri))
+            }
+            return false
+        }
         val videoId = playbackUri.getQueryParameter("v")
         val substituted = videoId?.let(StreamChoice::isSubstitute) == true
         if (!PlaybackFallback.isAlternative(playbackUri.toString(), substituted)) return false
