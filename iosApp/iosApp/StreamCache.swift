@@ -78,7 +78,7 @@ final class StreamCache {
         private var _status = 0 // a refusal the retries gave up on
         private var _complete = false
         private var refs = 0
-        private var waiters: [Int: (need: Int64, queue: DispatchQueue, block: () -> Void)] = [:]
+        private var waiters: [Int: (need: Int64?, queue: DispatchQueue, block: () -> Void)] = [:]
         private var nextToken = 0
         /// Opened on demand and closed once nobody holds the entry, so idle entries don't pin descriptors. Guarded by `lock`.
         private var rfd: Int32 = -1
@@ -88,6 +88,7 @@ final class StreamCache {
         /// Opened when a download starts, closed when the entry goes idle.
         private var wfd: Int32 = -1
         private var skip: Int64 = 0
+        private var requestedOffset: Int64 = 0
         private var attempt = 0
         private var progressed = false
         private var connections = 0
@@ -129,12 +130,12 @@ final class StreamCache {
             return got > 0 ? data.prefix(got) : Data()
         }
 
-        /// Calls [block] on [queue] once [need] bytes are on disk, or the download is over (complete or refused).
-        func wait(for need: Int64, on queue: DispatchQueue, _ block: @escaping () -> Void) -> Int {
+        /// Waits for the byte count, or for the content length when `need` is nil. A terminal result wakes either.
+        func wait(for need: Int64?, on queue: DispatchQueue, _ block: @escaping () -> Void) -> Int {
             lock.lock()
             nextToken += 1
             let token = nextToken
-            if _written >= need || _complete || _status != 0 {
+            if canWake(need) {
                 lock.unlock()
                 queue.async(execute: block)
             } else {
@@ -145,6 +146,11 @@ final class StreamCache {
         }
 
         func cancelWait(_ token: Int) { lock.lock(); waiters[token] = nil; lock.unlock() }
+
+        /// Called with the entry lock held.
+        private func canWake(_ need: Int64?) -> Bool {
+            _complete || _status != 0 || (need.map { _written >= $0 } ?? (_length != nil))
+        }
 
         fileprivate func retain() {
             lock.lock()
@@ -178,7 +184,7 @@ final class StreamCache {
 
         private func wake() {
             lock.lock()
-            let due = waiters.filter { _written >= $0.value.need || _complete || _status != 0 }
+            let due = waiters.filter { canWake($0.value.need) }
             due.keys.forEach { waiters[$0] = nil }
             lock.unlock()
             due.values.forEach { $0.queue.async(execute: $0.block) }
@@ -203,12 +209,14 @@ final class StreamCache {
                 session = URLSession(configuration: config, delegate: self, delegateQueue: ops)
             }
             var request = URLRequest(url: url)
-            request.setValue("bytes=\(s.written)-", forHTTPHeaderField: "Range")
+            // A one-byte cache repeatedly failed to resume in a Qobuz report. Fetch from zero and skip the cached byte.
+            requestedOffset = s.written == 1 ? 0 : s.written
             for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
+            request.setValue("bytes=\(requestedOffset)-", forHTTPHeaderField: "Range")
             connections += 1
             progressed = false
             skip = 0
-            nativeLog("StreamCache[\(id)]: connection #\(connections) \(url.host ?? "?") bytes=\(s.written)- (attempt \(attempt))")
+            nativeLog("StreamCache[\(id)]: connection #\(connections) \(url.host ?? "?") bytes=\(requestedOffset)- (attempt \(attempt))")
             task = session?.dataTask(with: request)
             task?.resume()
         }
@@ -222,21 +230,26 @@ final class StreamCache {
         }
 
         private func fail(_ status: Int) {
-            nativeLog("StreamCache[\(id)]: giving up, HTTP \(status)", warn: true)
+            nativeLog("StreamCache[\(id)]: giving up, \(status > 0 ? "HTTP" : "transport code") \(status)", warn: true)
             lock.lock(); _status = status; lock.unlock()
             task = nil
             wake()
         }
 
         /// Asks again from the last byte. Attempts count only failures without progress; 429 waits at least as long as Retry-After.
-        private func retry(status: Int, retryAfter: Double = 0) {
+        private func retry(status: Int, retryAfter: Double = 0, error: NSError? = nil) {
             task = nil
             let delays = status == 429 ? Self.throttleDelays : Self.retryDelays
             if progressed { attempt = 0 }
-            guard attempt < delays.count else { return fail(status == 0 ? NSURLErrorNetworkConnectionLost : status) }
+            let reason = error.map { "\($0.domain) \($0.code)" } ?? (status == 0 ? "incomplete response" : "HTTP \(status)")
+            guard attempt < delays.count else {
+                nativeLog("StreamCache[\(id)]: last failure: \(reason)", warn: true)
+                let transportCode = error.flatMap { $0.domain == NSURLErrorDomain ? $0.code : nil }
+                return fail(status == 0 ? (transportCode ?? NSURLErrorNetworkConnectionLost) : status)
+            }
             let delay = max(delays[attempt], retryAfter)
             attempt += 1
-            nativeLog("StreamCache[\(id)]: broke at \(state.written) (HTTP \(status)), resuming in \(delay)s", warn: true)
+            nativeLog("StreamCache[\(id)]: broke at \(state.written) (\(reason)), resuming in \(delay)s", warn: true)
             cache.queue.asyncAfter(deadline: .now() + delay) { self.startIfNeeded() }
         }
 
@@ -261,7 +274,7 @@ final class StreamCache {
                 }
                 return fail(status)
             }
-            if status == 200 { skip = written } // the host ignored Range: the file starts over, the bytes we have are dropped
+            skip = status == 200 ? written : written - requestedOffset
             let length = Self.total(http?.value(forHTTPHeaderField: "Content-Range"))
                 ?? (status == 200 && response.expectedContentLength > 0 ? response.expectedContentLength : nil)
             if let length { lock.lock(); _length = length; lock.unlock() }
@@ -294,7 +307,7 @@ final class StreamCache {
                 lock.lock(); _length = _length ?? _written; lock.unlock()
                 return finish()
             }
-            retry(status: 0)
+            retry(status: 0, error: error as NSError?)
         }
 
         /// "bytes 0-1023/4567890" or "bytes */4567890" -> 4567890
