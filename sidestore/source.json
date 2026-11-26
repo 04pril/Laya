@@ -20,6 +20,15 @@
       "screenshots": [],
       "versions": [
         {
+          "version": "1.9.7",
+          "buildVersion": "64",
+          "date": "2026-11-26T10:55:39Z",
+          "localizedDescription": "- 무손실 다운로드에서 Tidal이 선택되면 FLAC 음원을 `.m4a` 파일로 저장하고 FLAC 배지를 표시합니다.\n\n\n- 상세 음원 정보 표시는 화면 설정 맨 아래로 옮겼습니다.\n- 함께 듣기, 다운로드, 언어 설정은 설정 첫 화면에서 바로 열 수 있습니다. 앱 아이콘은 첫 화면 맨 아래에 따로 배치했습니다.\n- 고급 옵션은 지원하는 플랫폼에서 표시됩니다.\n\n실제 Tidal 음원의 오프라인 재생과 탐색은 iPhone에서 확인이 남아 있습니다.",
+          "downloadURL": "https://github.com/04pril/laya-iOS/releases/download/ios-v1.9.7/Laya-1.9.7.ipa",
+          "size": 91222344,
+          "minOSVersion": "17.0"
+        },
+        {
           "version": "1.9.6",
           "buildVersion": "63",
           "date": "2026-11-25T10:56:22Z",
