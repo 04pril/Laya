@@ -24,7 +24,7 @@
 "WG_FOOTER_CHECKS" = "A successful country check does not mean music will play. Also test playback, next track and lock-screen playback, then copy the diagnostics right after any playback error.";
 "WG_FOOTER_PROFILE" = "Standard WireGuard .conf with one [Peer] and AllowedIPs 0.0.0.0/0. The private key is stored only in this device's Keychain and is never shown or copied into diagnostics.";
 "WG_FOOTER_SERVER" = "HTTP and HTTPS use HTTP CONNECT (HTTPS encrypts the connection to the proxy and checks its certificate). Host names are resolved by the proxy server. SOCKS5 supports username and password authentication. The password is stored in the Keychain.";
-"WG_FOOTER_TUNNEL" = "No system VPN or network extension is used. Laya's own requests and music streams go through WireGuard inside this app, or through the proxy server you enter. If it fails, requests fail instead of going direct. Restart the app after changing this. Requires iOS 17.";
+"WG_FOOTER_TUNNEL" = "No system VPN or network extension is used. Laya's own requests and music streams go through WireGuard inside this app, or through the proxy server you enter. If it fails, requests fail instead of going direct. Music videos and the animated covers inside the app are fetched by the iOS player directly and do not use it. Restart the app after changing this. Requires iOS 17.";
 "WG_FORCE_STACK" = "Use compatibility networking";
 "WG_HANDSHAKE_AGO" = "handshake %lld s ago";
 "WG_HANDSHAKE_NONE" = "no handshake yet";
