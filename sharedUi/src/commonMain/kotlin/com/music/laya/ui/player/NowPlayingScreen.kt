@@ -1552,8 +1552,12 @@ fun NowPlayingScreen(
     // Lyrics, output and queue, with the output name under them — the row both
     // layouts end on, and the only thing in the landscape player's left column
     // besides the sleeve.
-    val tabletPlayer = tabletPlayerLayoutAvailable(PlayerPlatform.host.supportsExpandedPlayerLayout, windowWidth, windowHeight)
-    val landscape = landscapePlayerAvailable(windowWidth, windowHeight)
+    // A Duo, folded or open, either way up: always the sleeve on the left and the controls on the right, the
+    // shape its first build had (#18). Neither the tablet player's stacked portrait nor the phone's portrait.
+    val duoPlayer = PlayerPlatform.host.isExpandedPhone
+    val tabletPlayer = !duoPlayer &&
+        tabletPlayerLayoutAvailable(PlayerPlatform.host.supportsExpandedPlayerLayout, windowWidth, windowHeight)
+    val landscape = duoPlayer || landscapePlayerAvailable(windowWidth, windowHeight)
     val playerActions: @Composable () -> Unit = {
         if (tabletPlayer) {
             TabletPlayerActionRow(lyricsOpen, queueOpen, autoplayEnabled, accountName,

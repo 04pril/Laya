@@ -12,15 +12,24 @@ import androidx.compose.ui.unit.dp
  */
 object IosExpandedPhone {
     class Insets(val left: Double, val top: Double, val right: Double, val bottom: Double) {
-        /** The status column is a wide side inset; a notch in landscape on an ordinary phone never reaches here. */
-        val active: Boolean get() = maxOf(left, right) >= 40.0
+        /**
+         * The Duo's status column: a wide inset on one side only, folded or open, either way up. An ordinary
+         * iPhone has no side inset upright and an even pair on its side (the notch and the home side), so it
+         * never matches; nor does an iPad.
+         */
+        val active: Boolean get() = maxOf(left, right) >= 40.0 && minOf(left, right) < 20.0
         val railOnRight: Boolean get() = right >= left
-        val padding: PaddingValues get() = PaddingValues(left.dp, top.dp, right.dp, bottom.dp)
+        /**
+         * What the app keeps clear of: the status column's side and the side across from it, while [active].
+         * Top and bottom stay with Compose's own insets (pages already keep under the status bar where they should).
+         */
+        val padding: PaddingValues get() =
+            if (active) PaddingValues(start = left.dp, end = right.dp) else PaddingValues(0.dp)
     }
 
     val insets = mutableStateOf(Insets(0.0, 0.0, 0.0, 0.0))
 
-    /** From StatusBarHost on every layout, in points; zeros when the view is not inset. */
+    /** From StatusBarHost on every layout of an iPhone: the window's safe insets, in points; zeros elsewhere. */
     fun update(left: Double, top: Double, right: Double, bottom: Double) {
         val now = insets.value
         if (now.left != left || now.top != top || now.right != right || now.bottom != bottom) {

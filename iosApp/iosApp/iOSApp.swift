@@ -82,11 +82,15 @@ final class StatusBarHost: UIViewController {
         // keep the existing edge-to-edge canvas on iPad and compact phones.
         let safeFrame = view.window.map { view.convert($0.safeAreaLayoutGuide.layoutFrame, from: $0) }
             ?? view.safeAreaLayoutGuide.layoutFrame
-        let frame = AdaptiveContentBounds.frame(in: view.bounds, safeFrame: safeFrame,
-            isPhone: traitCollection.userInterfaceIdiom == .phone)
-        // Compose keeps the whole window and pads itself to `frame` (IosExpandedPhone), so it can draw its tabs in
-        // the status column's strip, as BitChord's system tab bar does there, instead of leaving it black (#18).
+        // Compose keeps the whole window. On an iPhone it is told the window's safe rectangle (IosExpandedPhone):
+        // where that shows the Duo's one-sided status column, folded or open, either way up, the app pads itself
+        // to it and puts its tabs in that strip, as BitChord's system tab bar does, instead of leaving it black
+        // (#18). It used to shrink the whole view to the rectangle, and only when unfolded.
         let bounds = view.bounds
+        let isPhone = traitCollection.userInterfaceIdiom == .phone
+        let safe = isPhone && [safeFrame.minX, safeFrame.minY, safeFrame.width, safeFrame.height].allSatisfy({ $0.isFinite })
+            ? bounds.intersection(safeFrame) : bounds
+        let frame = safe.isNull || safe.isEmpty ? bounds : safe
         IosExpandedPhone.shared.update(left: Double(frame.minX - bounds.minX), top: Double(frame.minY - bounds.minY),
                                        right: Double(bounds.maxX - frame.maxX), bottom: Double(bounds.maxY - frame.maxY))
         if content.view.frame != bounds { content.view.frame = bounds }
