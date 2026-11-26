@@ -76,6 +76,7 @@ internal object IosPlayerHost : PlayerHost {
     override val outputCaptionAlignment = Alignment.Center
     // Use available window space, including an unfolded phone, rather than the device name.
     override val supportsExpandedPlayerLayout = true
+    override val isExpandedPhone: Boolean get() = IosExpandedPhone.insets.value.active
     override val hasNativeOutputGlyph = true
     override val isIPad: Boolean get() = UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad
 
