@@ -108,10 +108,41 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         deckObservations.append(deck.observe(\.timeControlStatus, options: [.new]) { [weak self] deck, _ in
             DispatchQueue.main.async {
                 guard let self, deck === self.player else { return }
+                self.logTiming(deck)
                 self.reportProgress()
                 self.updateNowPlayingTiming()
             }
         })
+    }
+
+    // MARK: - Timing log
+
+    /// When play() was asked, until the first sound: how long a start took, for "Copy log".
+    private var startAskedAt: CFTimeInterval?
+    /// When the playing deck ran dry mid-track, until it plays again.
+    private var stalledAt: CFTimeInterval?
+
+    /// One line per start and per stall, from the playing deck's state changes (never per tick).
+    private func logTiming(_ deck: AVQueuePlayer) {
+        let now = CACurrentMediaTime()
+        switch deck.timeControlStatus {
+        case .playing:
+            if let asked = startAskedAt {
+                startAskedAt = nil
+                nativeLog(String(format: "AudioEngine: first sound %.0f ms after play", (now - asked) * 1000))
+            } else if let since = stalledAt {
+                stalledAt = nil
+                nativeLog(String(format: "AudioEngine: playing again after a %.1f s stall", now - since), warn: true)
+            }
+        case .waitingToPlayAtSpecifiedRate:
+            // Ran out of audio mid-track; a start still waiting for its first sound is covered by the line above.
+            guard startAskedAt == nil, stalledAt == nil, seekingToMs == nil, deck.reasonForWaitingToPlay == .toMinimizeStalls else { return }
+            stalledAt = now
+            let at = deck.currentTime().seconds
+            nativeLog("AudioEngine: stalled at \(at.isFinite ? String(format: "%.1f", at) : "?")s, waiting for data", warn: true)
+        default:
+            stalledAt = nil // paused: a stall that ends in a pause is not timed
+        }
     }
 
     // MARK: - AudioEngine
@@ -142,6 +173,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         activateSession()
         becomeCurrent(item)
         player.insert(item, after: nil)
+        startAskedAt = CACurrentMediaTime()
+        stalledAt = nil
         go()
     }
 
@@ -205,6 +238,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         cancelSwap()
         pausedByInterruption = false
         resumeAfterSeek = false
+        startAskedAt = nil // a start paused before it sounded is not timed
         player.pause()
         if fade != nil { idle.pause() }
         reportProgress()
@@ -243,7 +277,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
             guard let self else { return }
             if self.seekingToMs == positionMs { self.seekingToMs = nil }
             if self.resumeAfterSeek { self.resumeAfterSeek = false; self.go() }
-            print("AudioEngine: seek landed requested=\(Double(positionMs) / 1000)s currentTime=\(self.player.currentTime().seconds)s")
+            nativeLog("AudioEngine: seek landed requested=\(Double(positionMs) / 1000)s currentTime=\(self.player.currentTime().seconds)s")
             self.reportProgress()
             self.updateNowPlayingTiming()
         }
@@ -272,6 +306,8 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         resumeAfterSeek = false
         pausedByInterruption = false
         failedItems.removeAll()
+        startAskedAt = nil
+        stalledAt = nil
     }
 
     func dismissNowPlaying() {
@@ -506,7 +542,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         new.preferredForwardBufferDuration = item.preferredForwardBufferDuration
         prepare(new)
         adopt(fresh, for: new)
-        print("AudioEngine: reopening the FLAC with precise timing at \(Double(ms) / 1000)s")
+        nativeLog("AudioEngine: reopening the FLAC with precise timing at \(Double(ms) / 1000)s")
         reopening = new
         resumeAfterSeek = player.timeControlStatus != .paused
         player.pause() // nothing plays from 0 before the seek below lands
@@ -538,7 +574,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if atStatedEnd(item) { return endByHint(item) }
         guard failedItems.insert(ObjectIdentifier(item)).inserted else { return }
         let detail = failureDetail(item)
-        print("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")")
+        nativeLog("AudioEngine: item failed: \(message) \(detail) mime=\(loaders[ObjectIdentifier(item)]?.mimeType ?? "?") log=\(item.errorLog()?.events.last.map { "\($0.errorStatusCode) \($0.errorDomain) \($0.errorComment ?? "")" } ?? "-")", warn: true)
         cancelFade()
         clearNextOnMain()
         player.pause()
@@ -593,7 +629,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let replaying = delivered && lastWatchedPosition >= duration - 10 && position < lastWatchedPosition - 0.5
         lastWatchedPosition = position
         if replaying {
-            print("AudioEngine: tail replaying (back to \(position)s of \(duration)s); ending the track")
+            nativeLog("AudioEngine: tail replaying (back to \(position)s of \(duration)s); ending the track")
             stuckAt = -1
             return endByHint(item)
         }
@@ -604,7 +640,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         let atEnd = delivered && position >= duration - 2
         guard overrun || atEnd else { stuckAt = -1; return }
         if overrun || (abs(position - stuckAt) <= 0.05 && CACurrentMediaTime() - stuckSince > 1.5) {
-            print("AudioEngine: \(overrun ? "past" : "stuck at") the end (\(position)s of \(duration)s, \(player.timeControlStatus.rawValue)); ending the track")
+            nativeLog("AudioEngine: \(overrun ? "past" : "stuck at") the end (\(position)s of \(duration)s, \(player.timeControlStatus.rawValue)); ending the track")
             stuckAt = -1
             return endByHint(item)
         }
@@ -622,7 +658,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// [item] has played the whole of its stated length: on to the queued track as a natural end would.
     private func endByHint(_ item: AVPlayerItem) {
         guard item === currentItem, fade == nil else { return }
-        print("AudioEngine: track over at \(item.currentTime().seconds)s (parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
+        nativeLog("AudioEngine: track over at \(item.currentTime().seconds)s (parked=\(parked), next=\(nextItem != nil), held=\(pendingNext != nil))")
         materializeNextIfDue(force: true)
         if parked { return handOverNow() }
         if let next = nextItem, player.items().contains(next) { return player.advanceToNextItem() }
@@ -703,7 +739,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private func currentItemChanged(from old: AVPlayerItem?) {
         let now = player.currentItem
         if old !== now {
-            print("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) err=\(old?.error?.localizedDescription ?? "-"), next=\(now === nextItem), parked=\(parked))")
+            nativeLog("AudioEngine: item changed (old at \(old?.currentTime().seconds ?? -1)s status=\(old?.status.rawValue ?? -1) err=\(old?.error?.localizedDescription ?? "-"), next=\(now === nextItem), parked=\(parked))")
         }
         if let fresh = reopening, now === fresh {
             // The same track reopened precisely (reopenPrecise), not the next one.
@@ -794,7 +830,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         cancelSwap()
         guard fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .readyToPlay,
               let item = makeItem(url: url, headers: headers, mimeType: mimeType, contentLength: contentLength, chunkBytes: chunkBytes)
-        else { return print("AudioEngine: source swap skipped") }
+        else { return nativeLog("AudioEngine: source swap skipped") }
         clearNextOnMain() // Kotlin queues it again once the swap is in
         swapItem = item
         swapGen += 1
@@ -811,7 +847,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                     self.swapObservation = nil
                     self.swapAlign(item, deck, gen, attempt: 0)
                 } else if item.status == .failed {
-                    print("AudioEngine: source swap failed to load; staying on the playing copy")
+                    nativeLog("AudioEngine: source swap failed to load; staying on the playing copy", warn: true)
                     self.cancelSwap()
                 }
             }
@@ -826,7 +862,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // A FLAC cue is far more data than an Opus one; the lead grows each time the copy can't get there in time.
         let target = player.currentTime().seconds + (running ? (1.5 + 1.5 * Double(attempt)) * Double(rate) : 0)
         func retry() {
-            if attempt >= 3 { print("AudioEngine: source swap could not line up; staying on the playing copy"); return cancelSwap() }
+            if attempt >= 3 { nativeLog("AudioEngine: source swap could not line up; staying on the playing copy", warn: true); return cancelSwap() }
             swapAlign(item, deck, gen, attempt: attempt + 1)
         }
         deck.seek(to: CMTime(seconds: target, preferredTimescale: 1000), toleranceBefore: .zero, toleranceAfter: .zero) { [weak self] done in
@@ -888,7 +924,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         materializeNextIfDue()
         reportProgress()
         updateNowPlayingTiming()
-        print("AudioEngine: source swapped at \(player.currentTime().seconds)s")
+        nativeLog("AudioEngine: source swapped at \(player.currentTime().seconds)s")
     }
 
     private func cancelSwap(resume: Bool = true) {
@@ -1030,7 +1066,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         guard position >= start else { return }
         if position - start > 1 { // arrived late (a seek into the window): no fade for this pair
             fadeSkipped = true
-            print("Crossfade: window missed (at \(position)s, due \(start)s); gapless")
+            nativeLog("Crossfade: window missed (at \(position)s, due \(start)s); gapless")
             return abandonRamp()
         }
         guard item.status == .readyToPlay else { return } // still loading; the window allows a second of grace
@@ -1063,7 +1099,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         if transition.outRate != 1 { player.rate = outSpeed }
         rampedSpeed = nil
         fade = Fade(out: player, inn: deck, item: item, oldItem: current, start: position, length: length, inSpeed: inSpeed)
-        print("Crossfade: begin out=\(position)s len=\(length)s cue=\(transition.cueMs)ms rate=\(transition.rate)/\(transition.outRate)")
+        nativeLog("Crossfade: begin out=\(position)s len=\(length)s cue=\(transition.cueMs)ms rate=\(transition.rate)/\(transition.outRate)")
     }
 
     private func driveFade(_ f: Fade) {
@@ -1110,7 +1146,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         placeNext()
         reportProgress()
         updateNowPlayingTiming()
-        print("Crossfade: done")
+        nativeLog("Crossfade: done")
     }
 
     /// Nothing faded: the parked track starts now, the old one having run out.

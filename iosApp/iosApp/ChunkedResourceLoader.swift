@@ -155,10 +155,33 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         diagnosticsLock.lock(); _retries += 1; diagnosticsLock.unlock()
     }
 
+    /// When the loader was made: the clock its first-bytes line reads from. Queue only, after init.
+    private let createdAt = ProcessInfo.processInfo.systemUptime
+    private var firstBytesLogged = false
+    private var deliveredTotal = 0
+    /// A range slower than this is worth a line: a slow start without any failure leaves no other trace.
+    private static let slowRangeSec = 4.0
+
+    /// Logs when the player first had real audio to work with (past AVFoundation's few-byte type probe), which is how
+    /// long the start waited on the network, and any slow range after. Queue only.
+    private func noteDelivered(start: Int64, bytes: Int, tookSec: Double) {
+        let host = source.host ?? "?"
+        deliveredTotal += bytes
+        if !firstBytesLogged {
+            guard deliveredTotal >= 64 * 1024 else { return }
+            firstBytesLogged = true
+            nativeLog(String(format: "Loader: first 64 KB to the player after %.0f ms (last range %ld KB at %lld in %.0f ms, %@%@)",
+                             (ProcessInfo.processInfo.systemUptime - createdAt) * 1000, bytes / 1024, start, tookSec * 1000,
+                             host, streaming ? ", stream cache" : ""))
+        } else if tookSec >= Self.slowRangeSec {
+            nativeLog(String(format: "Loader: slow range, %ld KB at %lld took %.1f s (%@)", bytes / 1024, start, tookSec, host), warn: true)
+        }
+    }
+
     private func retry(_ loadingRequest: AVAssetResourceLoadingRequest, from start: Int64, end: Int64, attempt: Int) -> Bool {
         guard attempt < Self.retryDelays.count else { return false }
         noteRetry()
-        print("Loader: range at \(start) failed, retry \(attempt + 1)")
+        nativeLog("Loader: range at \(start) failed, retry \(attempt + 1)", warn: true)
         queue.asyncAfter(deadline: .now() + Self.retryDelays[attempt]) {
             self.fetch(loadingRequest, from: start, end: end, attempt: attempt + 1)
         }
@@ -181,6 +204,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         request.setValue("bytes=\(start)-\(chunkEnd)", forHTTPHeaderField: "Range")
         for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
 
+        let began = ProcessInfo.processInfo.systemUptime
         let task = session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             var error = error
@@ -230,6 +254,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
                     return
                 }
                 loadingRequest.dataRequest?.respond(with: data)
+                self.noteDelivered(start: start, bytes: data.count, tookSec: ProcessInfo.processInfo.systemUptime - began)
                 let next = start + Int64(data.count)
                 let finalEnd = min(end, (self.knownLength ?? Int64.max) - 1)
                 if let length = self.knownLength, next >= length { self.deliveredEnd = true }
@@ -292,6 +317,7 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
         if refused { return fail(s, st.status) }
         guard s.request.contentInformationRequest == nil || knownLength != nil || st.complete else { return waitFor(s, entry, need: 1) }
         guard let data = s.request.dataRequest else { return finish(s) } // only the type-and-length ask
+        let from = s.next
         while s.next <= s.end {
             let chunk = entry.read(at: s.next, count: Int(min(256 * 1024, s.end - s.next + 1)))
             if chunk.isEmpty { break }
@@ -299,6 +325,8 @@ final class ChunkedResourceLoader: NSObject, AVAssetResourceLoaderDelegate {
             s.next += Int64(chunk.count)
             if let length = knownLength, s.next >= length { deliveredEnd = true }
         }
+        // From disk: no range timing here (StreamCache logs its own connections), only the first-bytes line.
+        if s.next > from { noteDelivered(start: from, bytes: Int(s.next - from), tookSec: 0) }
         let now = entry.state
         if s.next > s.end || (now.complete && s.next >= now.written) { return finish(s) }
         if now.status != 0 && now.written <= s.next { return fail(s, now.status) }

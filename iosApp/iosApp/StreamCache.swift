@@ -208,21 +208,21 @@ final class StreamCache {
             connections += 1
             progressed = false
             skip = 0
-            print("StreamCache[\(id)]: connection #\(connections) \(url.host ?? "?") bytes=\(s.written)- (attempt \(attempt))")
+            nativeLog("StreamCache[\(id)]: connection #\(connections) \(url.host ?? "?") bytes=\(s.written)- (attempt \(attempt))")
             task = session?.dataTask(with: request)
             task?.resume()
         }
 
         private func finish() {
             lock.lock(); _complete = true; lock.unlock()
-            print("StreamCache[\(id)]: complete, \(state.written) bytes in \(connections) connection(s)")
+            nativeLog("StreamCache[\(id)]: complete, \(state.written) bytes in \(connections) connection(s)")
             task = nil
             session?.finishTasksAndInvalidate(); session = nil
             wake()
         }
 
         private func fail(_ status: Int) {
-            print("StreamCache[\(id)]: giving up, HTTP \(status)")
+            nativeLog("StreamCache[\(id)]: giving up, HTTP \(status)", warn: true)
             lock.lock(); _status = status; lock.unlock()
             task = nil
             wake()
@@ -236,7 +236,7 @@ final class StreamCache {
             guard attempt < delays.count else { return fail(status == 0 ? NSURLErrorNetworkConnectionLost : status) }
             let delay = max(delays[attempt], retryAfter)
             attempt += 1
-            print("StreamCache[\(id)]: broke at \(state.written) (HTTP \(status)), resuming in \(delay)s")
+            nativeLog("StreamCache[\(id)]: broke at \(state.written) (HTTP \(status)), resuming in \(delay)s", warn: true)
             cache.queue.asyncAfter(deadline: .now() + delay) { self.startIfNeeded() }
         }
 
