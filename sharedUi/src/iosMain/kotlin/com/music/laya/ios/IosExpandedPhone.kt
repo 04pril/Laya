@@ -20,11 +20,15 @@ object IosExpandedPhone {
         val active: Boolean get() = maxOf(left, right) >= 40.0 && minOf(left, right) < 20.0
         val railOnRight: Boolean get() = right >= left
         /**
-         * What the app keeps clear of: the status column's side and the side across from it, while [active].
-         * Top and bottom stay with Compose's own insets (pages already keep under the status bar where they should).
+         * The side insets the pages are told are already dealt with, while [active]: they run to the edge under the
+         * status column, as BitChord's do (its clock and battery float over the content), instead of leaving the
+         * strip black. Top and bottom stay with Compose's own insets.
          */
-        val padding: PaddingValues get() =
+        val consumed: PaddingValues get() =
             if (active) PaddingValues(start = left.dp, end = right.dp) else PaddingValues(0.dp)
+
+        /** The status column strip's width, for what sits beside it (the mini player stops short of the rail). */
+        val strip: Double get() = if (active) maxOf(left, right) else 0.0
     }
 
     val insets = mutableStateOf(Insets(0.0, 0.0, 0.0, 0.0))
