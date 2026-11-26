@@ -1439,6 +1439,11 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                         var outgoing by remember { mutableStateOf<Triple<IosPage?, Int, Int>?>(null) }
                         var outgoingIsTab by remember { mutableStateOf(false) }
                         var slideDir by remember { mutableStateOf(1f) }
+                        // Search (the last tab, a circle of its own beside the bar) rises over the screen it was opened
+                        // from, as a sheet does, and drops away again; the other tabs slide past each other.
+                        val searchTab = 3
+                        val pageHeight = this@BoxWithConstraints.constraints.maxHeight.toFloat().coerceAtLeast(1f)
+                        var tabMotion by remember { mutableStateOf(TabMotion.Slide) }
                         // Set by the back swipe, which has already slid the page off by the time the stack pops.
                         var swipedOff by remember { mutableStateOf(false) }
                         val tabChange = tab != shownTab
@@ -1452,13 +1457,17 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             val spring = spring<Float>(dampingRatio = 1f, stiffness = 500f)
                             when {
                                 tab != beforeTab -> {
+                                    val motion = when (searchTab) { tab -> TabMotion.Rise; beforeTab -> TabMotion.Drop; else -> TabMotion.Slide }
+                                    tabMotion = motion
                                     val direction = if (tab > beforeTab) 1f else -1f
                                     slideDir = direction
                                     outgoing = Triple(before, beforeTab, shownDepth - 1); outgoingIsTab = true
-                                    pageShift.snapTo(direction * pageWidth)
+                                    pageShift.snapTo(when (motion) { TabMotion.Slide -> direction * pageWidth; TabMotion.Rise -> pageHeight; TabMotion.Drop -> 0f })
                                     shownTop = stack.lastOrNull(); shownDepth = depth; shownTab = tab
-                                    pageShift.animateTo(0f, spring)
+                                    pageShift.animateTo(if (motion == TabMotion.Drop) pageHeight else 0f, spring)
                                     outgoing = null; outgoingIsTab = false
+                                    pageShift.snapTo(0f)
+                                    tabMotion = TabMotion.Slide
                                 }
                                 depth > shownDepth -> {
                                     outgoing = null
@@ -1495,12 +1504,48 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                             // A tab switch: the two tabs side by side, the new one coming in from its side of the bar.
                             tabChange || outgoingIsTab -> {
                                 val out = if (tabChange) Triple(shownTop, shownTab, shownDepth - 1) else outgoing
-                                if (out != null) Box(Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = if (tabChange) 0f else pageShift.value - slideDir * pageWidth
-                                }) { Page(out.first, out.second, out.third) }
-                                Box(Modifier.fillMaxSize().graphicsLayer {
-                                    translationX = if (tabChange) tabDirection * pageWidth else pageShift.value
-                                }.background(windowBackground)) { Page(stack.lastOrNull(), tab, stack.size - 1) }
+                                // On the first frame the effect has not run yet: which motion it will be is read here.
+                                val motion = if (!tabChange) tabMotion else when (searchTab) {
+                                    tab -> TabMotion.Rise; shownTab -> TabMotion.Drop; else -> TabMotion.Slide
+                                }
+                                val incoming: @Composable () -> Unit = { Page(stack.lastOrNull(), tab, stack.size - 1) }
+                                val leavingTab: @Composable () -> Unit = { if (out != null) Page(out.first, out.second, out.third) }
+                                when (motion) {
+                                    TabMotion.Slide -> {
+                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                            translationX = if (tabChange) 0f else pageShift.value - slideDir * pageWidth
+                                        }) { leavingTab() }
+                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                            translationX = if (tabChange) tabDirection * pageWidth else pageShift.value
+                                        }.background(windowBackground)) { incoming() }
+                                    }
+                                    // Search comes up over the screen it was opened from, which stays put and dims.
+                                    TabMotion.Rise -> {
+                                        Box(Modifier.fillMaxSize()) {
+                                            leavingTab()
+                                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                                val y = if (tabChange) pageHeight else pageShift.value
+                                                alpha = 0.3f * (1f - y / pageHeight)
+                                            }.background(Color.Black))
+                                        }
+                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                            translationY = if (tabChange) pageHeight else pageShift.value
+                                        }.background(windowBackground)) { incoming() }
+                                    }
+                                    // And goes back down, uncovering the tab chosen.
+                                    TabMotion.Drop -> {
+                                        Box(Modifier.fillMaxSize()) {
+                                            incoming()
+                                            Box(Modifier.fillMaxSize().graphicsLayer {
+                                                val y = if (tabChange) 0f else pageShift.value
+                                                alpha = 0.3f * (1f - y / pageHeight)
+                                            }.background(Color.Black))
+                                        }
+                                        Box(Modifier.fillMaxSize().graphicsLayer {
+                                            translationY = if (tabChange) 0f else pageShift.value
+                                        }.background(windowBackground)) { leavingTab() }
+                                    }
+                                }
                             }
                             else -> {
                                 val leavingEntry = outgoing ?: if (pendingPop) Triple(shownTop, tab, shownDepth - 1) else null
@@ -1903,3 +1948,6 @@ private fun Song.needsLinks() = localUri == null && videoId.isNotBlank() && (alb
 private fun Song.withLinks(extra: Song?): Song =
     if (extra == null || extra.videoId != videoId) this
     else copy(artistId = artistId ?: extra.artistId, albumId = albumId ?: extra.albumId, albumName = albumName ?: extra.albumName)
+
+/** How a tab change moves: tabs slide past each other; Search rises over the screen and drops away again. */
+private enum class TabMotion { Slide, Rise, Drop }
