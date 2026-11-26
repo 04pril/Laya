@@ -281,6 +281,23 @@ object SourceResolver {
     }
 
     /**
+     * After a stream failed in the player: the same track from another enabled source ranked above YouTube, the user's
+     * order deciding, none of [failed] (config ids) asked again. Null when none has it, and YouTube is the next rung.
+     *
+     * A row picked from the Addons search is tied to its source, and its failure went straight to YouTube even with
+     * the track on Tidal; a Qobuz file that would not download, a track YouTube itself cannot play, left silence.
+     */
+    suspend fun otherSourceFor(target: TrackMatcher.Target, failed: Set<String>): Pair<MusicSource, SourceStream>? {
+        if (target.title.isBlank() || target.isVideo) return null
+        val active = SourceRegistry.activeForPlayback()
+        val youtube = active.firstOrNull { it.kind == SourceKind.YOUTUBE }
+        val candidates = (if (youtube != null) rankedAbove(youtube.configId, active) else active)
+            .filter { it.configId !in failed && it.kind != SourceKind.YOUTUBE }
+        if (candidates.isEmpty()) return null
+        return bestAcross(candidates, target, requestForNow())
+    }
+
+    /**
      * The reliable last rung for a source-backed queue item whose chosen stream
      * failed in the player.
      *
