@@ -1327,7 +1327,7 @@ class IosPlayer(private val engine: AudioEngine, private val scope: CoroutineSco
         val via = NerdStats.exactSourceFor(failed.videoId) ?: "source"
         playingOpened?.takeIf { it.first == failed.videoId }?.second?.configId?.let { config ->
             failedSources.add(config)
-            PlaybackFailures.record(config, TrackMatcher.targetOf(failed)) // and skipped for this track for a day
+            PlaybackFailures.record(config, TrackMatcher.targetOf(failed)) // and skipped for this track for an hour
             // Never started there, and not a rate limit: if another source now plays it, the fault was this source's
             // own and is kept across launches (onProgress). A dead network fails every source and proves nothing.
             if (httpStatus != 429 && position.positionMs < 1_000) {
