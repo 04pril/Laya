@@ -1054,9 +1054,10 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
         // YouTube start that sounded at 1.2 s), and was skipped, leaving the whole track on AAC. It waits instead and
         // swaps in the moment the playing copy is ready; a stop, a new track or another swap drops the wait.
         if fade == nil, !parked, let old = currentItem, player.currentItem === old, old.status == .unknown {
-            deferredSwap = old.observe(\.status, options: [.new]) { [weak self] item, _ in
+            let generation = swapGen
+            deferredSwap = old.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
                 DispatchQueue.main.async {
-                    guard let self, item.status != .unknown, self.deferredSwap != nil else { return }
+                    guard let self, generation == self.swapGen, item.status != .unknown, self.deferredSwap != nil else { return }
                     self.deferredSwap = nil
                     guard item === self.currentItem, item.status == .readyToPlay else {
                         return nativeLog("AudioEngine: source swap dropped; the playing copy did not open")
@@ -1166,9 +1167,9 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     }
 
     private func cancelSwap(resume: Bool = true) {
+        swapGen += 1
         deferredSwap = nil
         guard let item = swapItem else { return }
-        swapGen += 1
         swapItem = nil
         swapObservation = nil
         idle.pause()
