@@ -18,6 +18,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -1395,6 +1398,19 @@ fun LayaIosApp(engine: AudioEngine, onStatusBarLight: (Boolean) -> Unit = {}) {
                                 }
                             }
                         }
+                        // iOS's back swipe: a drag rightwards from the left edge leaves the page, as UINavigationController's
+                        // would. Pages are a Compose stack here, so there was no back gesture at all (#18).
+                        if (stack.isNotEmpty()) Box(
+                            Modifier.align(Alignment.CenterStart).fillMaxHeight().width(20.dp)
+                                .pointerInput(stack.size) {
+                                    var dragged = 0f
+                                    detectHorizontalDragGestures(
+                                        onDragStart = { dragged = 0f },
+                                        onDragEnd = { if (dragged > 72.dp.toPx()) { focusManager.clearFocus(); stack = stack.dropLast(1) } },
+                                        onDragCancel = { dragged = 0f },
+                                    ) { change, amount -> change.consume(); dragged += amount }
+                                },
+                        )
                     }
                     GlassNavBar(
                         tabs = tabs,
