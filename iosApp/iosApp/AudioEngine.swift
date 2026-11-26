@@ -54,7 +54,11 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     /// Racing through a silent stretch (see EqualizerTap.listen).
     private var skipping = false
     private var currentItem: AVPlayerItem?
-    private var nextItem: AVPlayerItem?
+    private var nextItem: AVPlayerItem? {
+        didSet {
+            if oldValue !== nextItem { nextStatusObservation = nil }
+        }
+    }
     /// Items already reported as failed, so the status, the notification and the loader don't report one failure three times.
     private var failedItems = Set<ObjectIdentifier>()
     /// Where the clock last stood still, and since when (see reportProgress).
@@ -63,6 +67,7 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
     private var lastWatchedPosition: Double = -1
 
     private var statusObservation: NSKeyValueObservation?
+    private var nextStatusObservation: NSKeyValueObservation?
     private var notificationTokens: [NSObjectProtocol] = []
     private var pendingSeekMs: Int64?
     /// Target of a seek still in flight. Reported as the position until it lands,
@@ -923,23 +928,26 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
                 guard let self, let asset,
                       self.currentItem?.asset === asset || self.nextItem?.asset === asset else { return }
                 self.fileDurations.setObject(FileDuration(seconds: seconds, estimated: true), forKey: asset)
-                if self.currentItem?.asset === asset {
-                    if let current = self.currentItem { self.configurePlaybackEnd(for: current) }
+                if let current = self.currentItem, current.asset === asset {
+                    self.configurePlaybackEnd(for: current)
                     self.reportProgress()
                     self.updateNowPlayingTiming()
+                } else if let next = self.nextItem, next.asset === asset, next !== self.player.currentItem {
+                    self.configurePlaybackEnd(for: next, queued: true)
                 }
             }
         }
     }
 
     @discardableResult
-    private func configurePlaybackEnd(for item: AVPlayerItem) -> Double? {
+    private func configurePlaybackEnd(for item: AVPlayerItem, queued: Bool = false) -> Double? {
         guard let end = PlaybackDuration.endpoint(native: item.duration.seconds, known: exactDuration(of: item)) else { return nil }
         let boundary = CMTime(seconds: end, preferredTimescale: 1000)
         if item.forwardPlaybackEndTime != boundary {
             item.forwardPlaybackEndTime = boundary
-            nativeLog(String(format: "AudioEngine: corrected duration from %.3fs to %.3fs (%@)",
-                             item.duration.seconds, end, fileDurations.object(forKey: item.asset) == nil ? "stream" : "file"))
+            nativeLog(String(format: "AudioEngine: corrected duration from %.3fs to %.3fs (%@)%@",
+                             item.duration.seconds, end, fileDurations.object(forKey: item.asset) == nil ? "stream" : "file",
+                             queued ? " before queue advance" : ""))
         }
         return end
     }
@@ -1306,6 +1314,14 @@ final class AVAudioEngineImpl: NSObject, AudioEngine {
 
     /// Puts [item], which sits on no deck, where the plan needs it: parked on the idle deck for a fade, behind the current item otherwise.
     private func place(_ item: AVPlayerItem) {
+        // Set the corrected boundary while the item buffers, so promotion needn't change the range as audio starts.
+        nextStatusObservation = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            DispatchQueue.main.async {
+                guard let self, item === self.nextItem, item !== self.player.currentItem, item.status != .unknown else { return }
+                self.nextStatusObservation = nil
+                if item.status == .readyToPlay { self.configurePlaybackEnd(for: item, queued: true) }
+            }
+        }
         if fade == nil && transition.fadeMs > 0 && !fadeSkipped {
             idle.removeAllItems()
             idle.insert(item, after: nil)
